@@ -25,3 +25,29 @@ with st.form("new_user"):
     if st.form_submit_button("Create User"):
         supabase.table("portal_users").insert({"username":u, "password_hash":p, "role":r, "full_name":u.title()}).execute()
         st.success("User added.")
+        
+        # --- BRAND MANAGEMENT SECTION ---
+st.divider()
+st.subheader("📋 Fleet Brand Setup")
+
+# Fetch current brands
+b_res = supabase.table("vehicle_brands").select("*").order("brand_name").execute()
+brands = [b['brand_name'] for b in b_res.data] if b_res.data else []
+
+col_a, col_b = st.columns(2)
+
+with col_a:
+    new_brand = st.text_input("Add New Brand", placeholder="e.g. Suzuki").strip().title()
+    if st.button("Save Brand"):
+        if new_brand and new_brand not in brands:
+            supabase.table("vehicle_brands").insert({"brand_name": new_brand}).execute()
+            st.success(f"Added {new_brand}")
+            st.rerun()
+
+with col_b:
+    if brands:
+        remove_brand = st.selectbox("Remove Existing Brand", options=brands)
+        if st.button("Delete Brand", type="secondary"):
+            supabase.table("vehicle_brands").delete().eq("brand_name", remove_brand).execute()
+            st.warning(f"Removed {remove_brand}")
+            st.rerun()

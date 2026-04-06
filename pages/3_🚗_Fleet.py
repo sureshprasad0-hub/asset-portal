@@ -7,30 +7,37 @@ if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
     st.warning("Please log in on the Home page first.")
     st.stop()
 
-# --- 2. CONNECTION ---
-try:
-    url: str = st.secrets["SUPABASE_URL"]
-    key: str = st.secrets["SUPABASE_KEY"]
-    supabase: Client = create_client(url, key)
-except Exception as e:
-    st.error(f"Connection Error: {e}")
-    st.stop()
+# --- 2. DATABASE CONNECTION ---
+@st.cache_resource
+def init_connection():
+    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+
+supabase = init_connection()
 
 st.title("🚗 Fleet Inventory")
 
-# --- 3. ACTION: REGISTER NEW ASSET ---
+# --- 3. FETCH DATA FOR FORM (BRANDS & LOCATIONS) ---
+# We fetch brands from the new lookup table we discussed for Settings
+try:
+    brand_res = supabase.table("vehicle_brands").select("brand_name").order("brand_name").execute()
+    brand_list = [b['brand_name'] for b in brand_res.data] if brand_res.data else ["Other"]
+except:
+    brand_list = ["Toyota", "Hyundai", "Isuzu", "Kia", "Mazda"] # Fallback defaults
+
+# --- 4. ACTION: REGISTER NEW ASSET ---
 with st.expander("➕ Register New Vehicle", expanded=False):
     with st.form("add_vehicle", clear_on_submit=True):
         col1, col2 = st.columns(2)
         plate = col1.text_input("License Plate (e.g. LR1234)").strip().upper()
-        brand = col2.text_input("Make/Brand (e.g. Toyota)")
+        # CHANGED: Now a selectbox instead of text_input
+        brand = col2.selectbox("Make/Brand", options=brand_list)
         
         col3, col4 = st.columns(2)
         model = col3.text_input("Model (e.g. Hilux)")
         location = col4.selectbox("Primary Location", ["Suva", "Nadi", "Lautoka", "Pacific Harbor", "Savusavu"])
         
         if st.form_submit_button("Add to Fleet", use_container_width=True):
-            if plate and brand:
+            if plate:
                 try:
                     supabase.table("fleet").insert({
                         "plate": plate, 
@@ -39,23 +46,22 @@ with st.expander("➕ Register New Vehicle", expanded=False):
                         "location": location,
                         "status": "Available"
                     }).execute()
-                    st.success(f"Vehicle {plate} added to inventory!")
+                    st.success(f"Vehicle {plate} ({brand}) added to inventory!")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error adding vehicle: {e}")
             else:
-                st.warning("Please provide both Plate and Brand.")
+                st.warning("Please provide the License Plate number.")
 
-# --- 4. DISPLAY & MANAGEMENT ---
+# --- 5. DISPLAY & MANAGEMENT ---
 st.subheader("Current Asset Registry")
 
-# Fetch data from Supabase
+# Fetch full fleet data
 f_res = supabase.table("fleet").select("*").order("plate").execute()
 
 if f_res.data:
     df = pd.DataFrame(f_res.data)
     
-    # Logic for mobile-friendly cards
     for index, row in df.iterrows():
         with st.container(border=True):
             c1, c2, c3 = st.columns([2, 2, 1])
@@ -73,11 +79,11 @@ if f_res.data:
             else:
                 c2.write("🟡 Maintenance")
             
-            # Column 3: Quick Admin Update
+            # Column 3: Quick Admin Update (Role-based)
             if st.session_state.get('user_role') in ['Admin', 'Manager']:
-                # We prevent manual override if the car is currently out with a customer
                 if status != "Rented":
                     options = ["Available", "Maintenance"]
+                    # Ensure current status is in the options list to avoid index errors
                     current_idx = options.index(status) if status in options else 0
                     
                     new_status = c3.selectbox(
@@ -88,12 +94,11 @@ if f_res.data:
                         label_visibility="collapsed"
                     )
                     
-                    # If status changed by user, update DB immediately
                     if new_status != status:
                         supabase.table("fleet").update({"status": new_status}).eq("id", row['id']).execute()
                         st.rerun()
                 else:
-                    c3.caption("Locked (Active Rental)")
+                    c3.caption("Locked (Active)")
 
 else:
-    st.info("No vehicles registered. Use the 'Register' box above to start your fleet.")
+    st.info("No vehicles registered. Use the 'Register' box above to start.")
