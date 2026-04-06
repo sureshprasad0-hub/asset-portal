@@ -23,7 +23,9 @@ if not st.session_state['logged_in']:
         u = st.text_input("Username").strip().lower()
         p = st.text_input("Password", type="password").strip()
         if st.form_submit_button("Log In to Dashboard", use_container_width=True):
-            res = supabase.table("portal_users").select("*").eq("username", u).eq("password_hash", p).execute()
+            # TEMPORARY DEBUG ONLY - DELETE AFTER TESTING
+res = supabase.table("portal_users").select("*").eq("username", u).execute()
+            # res = supabase.table("portal_users").select("*").eq("username", u).eq("password_hash", p).execute()
             if res.data:
                 st.session_state.update({
                     "logged_in": True, 
