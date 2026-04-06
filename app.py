@@ -30,7 +30,7 @@ st.markdown("""
     /* Mobile-friendly buttons */
     .stButton>button { width: 100%; border-radius: 10px; height: 3em; }
     </style>
-    """, unsafe_allow_value=True)
+    """, unsafe_allow_html=True)
 
 # --- 4. LOGIN SYSTEM ---
 if 'logged_in' not in st.session_state:
