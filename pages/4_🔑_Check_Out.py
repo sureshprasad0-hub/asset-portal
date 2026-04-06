@@ -1,7 +1,7 @@
 import streamlit as st
 from datetime import datetime, timedelta
 from supabase import create_client, Client
-from streamlit_drawable_canvas import st_canvas # New Import
+from streamlit_drawable_canvas import st_canvas
 
 # --- GATEKEEPER ---
 if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
@@ -18,6 +18,8 @@ st.title("🔑 New Rental Agreement")
 # --- DATA FETCHING ---
 v_res = supabase.table("fleet").select("id, plate").eq("status", "Available").execute()
 c_res = supabase.table("customers").select("id, name").execute()
+vat_setting = supabase.table("settings").select("config_value").eq("config_key", "vat_rate").execute()
+vat_pct = float(vat_setting.data[0]['config_value']) if vat_setting.data else 15.0
 
 if not v_res.data:
     st.error("No vehicles available in the fleet.")
@@ -34,39 +36,15 @@ with st.form("checkout_form"):
     date_in = col4.date_input("Return Date", datetime.now() + timedelta(days=3))
     
     daily_rate = st.number_input("Daily Rate ($)", min_value=0.0, value=120.0)
-
-# --- FETCH TAX RATE ---
-vat_setting = supabase.table("settings").select("config_value").eq("config_key", "vat_rate").execute()
-vat_pct = float(vat_setting.data[0]['config_value']) if vat_setting.data else 15.0
-
-# --- DYNAMIC CALCULATION ---
-duration = (date_in - date_out).days
-if duration < 1: duration = 1
-
-subtotal = (daily_rate * duration) + security_bond
-tax_total = (daily_rate * duration) * (vat_pct / 100) # Tax only applies to the rental, not the bond
-grand_total = subtotal + tax_total
-
-st.divider()
-col_a, col_b, col_c = st.columns(3)
-col_a.metric("Subtotal", f"${subtotal:,.2f}")
-col_b.metric(f"VAT ({vat_pct}%)", f"${tax_total:,.2f}")
-col_c.metric("Grand Total", f"${grand_total:,.2f}")
-
-# --- SAVE TO DATABASE ---
-# When you run your .insert(), make sure to include these:
-# "subtotal": subtotal, "tax_amount": tax_total, "total": grand_total
-
+    security_bond = st.number_input("Security Bond ($)", min_value=0.0, value=500.0)
+    
     fuel_out = st.select_slider(
-    "Departure Fuel Level",
-    options=["Empty", "1/4", "1/2", "3/4", "Full"],
-    value="Full"
-)
+        "Departure Fuel Level",
+        options=["Empty", "1/4", "1/2", "3/4", "Full"],
+        value="Full"
+    )
 
-# Remember to include "fuel_out": fuel_out in your .insert() dictionary later in that file!
-    # Signature Section
     st.write("### ✍️ Customer Signature")
-    st.caption("Sign inside the box below using your finger or stylus")
     canvas_result = st_canvas(
         fill_color="rgba(255, 165, 0, 0.3)",
         stroke_width=3,
@@ -77,26 +55,38 @@ col_c.metric("Grand Total", f"${grand_total:,.2f}")
         key="canvas",
     )
 
+    # Calculate Totals
+    duration = (date_in - date_out).days
+    if duration < 1: duration = 1
+    subtotal = (daily_rate * duration) + security_bond
+    tax_total = (daily_rate * duration) * (vat_pct / 100)
+    grand_total = subtotal + tax_total
+
+    st.divider()
+    st.write(f"**Subtotal:** ${subtotal:,.2f} | **VAT ({vat_pct}%):** ${tax_total:,.2f}")
+    st.subheader(f"Grand Total: ${grand_total:,.2f}")
+
     if st.form_submit_button("Finalize & Save Agreement", use_container_width=True):
-        if canvas_result.image_data is not None:
-            # Logic to save the data
+        if canvas_result.image_data is not None and c_choice != "No Customers Found":
             vid = [v['id'] for v in v_res.data if v['plate'] == v_choice][0]
             cid = [c['id'] for c in c_res.data if c['name'] == c_choice][0]
             
-            duration = (date_in - date_out).days
-            total = daily_rate * (duration if duration > 0 else 1)
-            
-            # 1. Save Rental Record
             supabase.table("rentals").insert({
-                "vehicle_id": vid, "customer_id": cid, "rate": daily_rate,
-                "days": duration, "total": total, "date_out": str(date_out), 
+                "vehicle_id": vid, 
+                "customer_id": cid, 
+                "rate": daily_rate,
+                "days": duration, 
+                "subtotal": subtotal,
+                "tax_amount": tax_total,
+                "total": grand_total, 
+                "fuel_out": fuel_out,
+                "date_out": str(date_out), 
+                "date_in": str(date_in),
                 "status": "Active"
             }).execute()
             
-            # 2. Update Fleet Status
             supabase.table("fleet").update({"status": "Rented"}).eq("id", vid).execute()
-            
-            st.success(f"Agreement Signed & Saved for {v_choice}!")
-            st.balloons()
+            st.success("Agreement Saved!")
+            st.rerun()
         else:
-            st.error("Please provide a signature to proceed.")
+            st.error("Signature required and a valid customer must be selected.")
