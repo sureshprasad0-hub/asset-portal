@@ -25,8 +25,7 @@ if not st.session_state['logged_in']:
         if st.form_submit_button("Log In to Dashboard", use_container_width=True):
             # TEMPORARY DEBUG ONLY - DELETE AFTER TESTING
             res = supabase.table("portal_users").select("*").eq("username", u).execute()
-            'res = supabase.table("portal_users").select("*").eq("username", u).eq("password_hash", p).execute()'
-            if res.data:
+             if res.data:
                 st.session_state.update({
                     "logged_in": True, 
                     "user_role": res.data[0]['role'], 
