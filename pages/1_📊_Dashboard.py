@@ -6,7 +6,7 @@ from supabase import create_client
 if not st.session_state.get('logged_in'): st.stop()
 supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-st.title("📊 Operations Dashboard")
+st.title("📊 Dashboard")
 
 # --- 1. OVERDUE RENTALS ---
 r_res = supabase.table("rentals").select("*, fleet(plate), customers(name)").eq("status", "Active").execute()
