@@ -7,17 +7,17 @@ if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
     st.warning("Please log in on the Home page first.")
     st.stop()
 
-# Fetch Company Name for the Header
-c_res = supabase.table("settings").select("config_value").eq("config_key", "company_name").execute()
-company_display = c_res.data[0]['config_value'] if c_res.data else "YOUR RENTAL & TOURS"
-st.caption(f"📍 {company_display}")
-
 # --- 2. CONNECTION ---
 url: str = st.secrets["SUPABASE_URL"]
 key: str = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
 
 st.title("🚗 Fleet Inventory")
+
+# Fetch Company Name for the Header
+c_res = supabase.table("settings").select("config_value").eq("config_key", "company_name").execute()
+company_display = c_res.data[0]['config_value'] if c_res.data else "YOUR RENTAL & TOURS"
+st.caption(f"📍 {company_display}")
 
 # --- 3. FETCH DYNAMIC DROPDOWNS FROM SETTINGS ---
 # Fetch Brands
