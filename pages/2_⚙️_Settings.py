@@ -51,3 +51,29 @@ with col_b:
             supabase.table("vehicle_brands").delete().eq("brand_name", remove_brand).execute()
             st.warning(f"Removed {remove_brand}")
             st.rerun()
+
+# --- LOCATION MANAGEMENT SECTION ---
+st.divider()
+st.subheader("📍 Branch Location Setup")
+
+# Fetch current locations
+loc_res = supabase.table("operating_locations").select("*").order("location_name").execute()
+locations = [l['location_name'] for l in loc_res.data] if loc_res.data else []
+
+col_c, col_d = st.columns(2)
+
+with col_c:
+    new_loc = st.text_input("Add New Branch", placeholder="e.g. Rakiraki").strip().title()
+    if st.button("Save Location"):
+        if new_loc and new_loc not in locations:
+            supabase.table("operating_locations").insert({"location_name": new_loc}).execute()
+            st.success(f"Added {new_loc} Branch")
+            st.rerun()
+
+with col_d:
+    if locations:
+        remove_loc = st.selectbox("Remove Branch", options=locations)
+        if st.button("Delete Location", type="secondary"):
+            supabase.table("operating_locations").delete().eq("location_name", remove_loc).execute()
+            st.warning(f"Removed {remove_loc}")
+            st.rerun()
