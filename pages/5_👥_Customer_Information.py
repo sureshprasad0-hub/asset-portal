@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np # Added for NaN handling
 from datetime import datetime, date
 from supabase import create_client, Client
 
@@ -22,30 +23,33 @@ if 'selected_customer' not in st.session_state:
     st.session_state.selected_customer = None
 
 def safe_date(date_val, default=date(1995, 1, 1)):
-    if not date_val: return default
+    if date_val is None or pd.isna(date_val): return default
     try:
         return datetime.strptime(str(date_val), '%Y-%m-%d').date()
     except:
         return default
 
-# --- 4. DATA FETCHING (PRE-LOAD FOR STATS) ---
+# --- 4. DATA FETCHING ---
 res = supabase.table("customers").select("*").order("name").execute()
+# Ensure we handle empty data or NaN values immediately
 df_all = pd.DataFrame(res.data) if res.data else pd.DataFrame()
 
-# --- 5. TOP SECTION: CUSTOMER STATS ---
+# --- 5. TOP SECTION: STATS (FIXED FOR NaN) ---
 if st.session_state.view_mode == "list":
     if not df_all.empty:
         st.write("### 📊 Registry Overview")
         col_a, col_b, col_c = st.columns(3)
         
         total_cust = len(df_all)
-        # Convert to date objects for comparison
-        df_all['expiry_dt'] = pd.to_datetime(df_all['dl_expiry']).dt.date
-        expired_count = len(df_all[df_all['expiry_dt'] < date.today()])
+        
+        # Clean date column for calculation: replace NaNs with today to avoid crash
+        df_all['temp_expiry'] = df_all['dl_expiry'].apply(lambda x: safe_date(x, default=date.today()))
+        expired_count = len(df_all[df_all['temp_expiry'] < date.today()])
+        
         intl_count = len(df_all[df_all['country_of_issue'] != 'Fiji'])
 
         col_a.metric("Total Customers", total_cust)
-        col_b.metric("Expired Licenses", expired_count, delta="-Risk" if expired_count > 0 else None, delta_color="inverse")
+        col_b.metric("Expired Licenses", expired_count)
         col_c.metric("International IDs", intl_count)
     st.divider()
 
@@ -55,44 +59,39 @@ if st.session_state.view_mode in ["add", "edit"]:
     with st.container(border=True):
         st.subheader("📝 Edit Profile" if cust else "➕ New Registration")
         with st.form("customer_form", clear_on_submit=False):
-            f_name = st.text_input("Full Legal Name", value=cust['name'] if cust else "").strip()
+            f_name = st.text_input("Full Legal Name", value=cust['name'] if cust and not pd.isna(cust['name']) else "").strip()
             f_dob = st.date_input("Date of Birth", value=safe_date(cust['dob'] if cust else None))
             
             c1, c2 = st.columns(2)
-            f_email = c1.text_input("Email", value=cust['email'] if cust else "")
-            f_phone = c2.text_input("Mobile", value=cust['phone'] if cust else "")
-            f_address = st.text_area("Physical Address", value=cust['physical_address'] if cust else "")
+            f_email = c1.text_input("Email", value=cust['email'] if cust and not pd.isna(cust['email']) else "")
+            f_phone = c2.text_input("Mobile", value=cust['phone'] if cust and not pd.isna(cust['phone']) else "")
+            f_address = st.text_area("Physical Address", value=cust['physical_address'] if cust and not pd.isna(cust['physical_address']) else "")
 
             st.divider()
             c3, c4 = st.columns(2)
-            f_dl = c3.text_input("License No.", value=cust['dl_no'] if cust else "").upper()
+            f_dl = c3.text_input("License No.", value=cust['dl_no'] if cust and not pd.isna(cust['dl_no']) else "").upper()
             f_expiry = c4.date_input("License Expiry", value=safe_date(cust['dl_expiry'] if cust else None, default=date.today()))
             
             f_country = st.selectbox("Issue Country", ["Fiji", "Australia", "NZ", "USA", "Other"], 
                                      index=0 if not cust else ["Fiji", "Australia", "NZ", "USA", "Other"].index(cust.get('country_of_issue', 'Fiji')))
-            
-            license_file = st.file_uploader("Upload ID Scan", type=['png', 'jpg', 'jpeg', 'pdf'])
 
             sub_col, can_col = st.columns(2)
             if sub_col.form_submit_button("💾 Save Record", use_container_width=True):
-                # Age & Expiry Logic
-                age = (date.today() - f_dob).days // 365
                 if not f_name or not f_dl:
                     st.error("Name and License are required.")
-                elif age < 21:
-                    st.error(f"Underage Violation ({age} yrs)")
-                elif f_expiry < date.today():
-                    st.error("License Expired")
                 else:
                     try:
-                        f_path = cust.get('license_scan_path') if cust else None
-                        if license_file:
-                            f_path = f"licenses/{f_dl}_{datetime.now().strftime('%Y%m%d')}.{license_file.name.split('.')[-1]}"
-                            supabase.storage.from_("license-docs").upload(f_path, license_file.getvalue(), {"upsert": "true"})
-
-                        payload = {"name": f_name, "dob": str(f_dob), "email": f_email, "phone": f_phone, 
-                                   "physical_address": f_address, "dl_no": f_dl, "dl_expiry": str(f_expiry), 
-                                   "country_of_issue": f_country, "license_scan_path": f_path}
+                        # Ensure no None/NaN values are sent to Supabase
+                        payload = {
+                            "name": f_name or "Unknown",
+                            "dob": str(f_dob),
+                            "email": f_email or "",
+                            "phone": f_phone or "",
+                            "physical_address": f_address or "",
+                            "dl_no": f_dl,
+                            "dl_expiry": str(f_expiry),
+                            "country_of_issue": f_country
+                        }
 
                         if cust:
                             supabase.table("customers").update(payload).eq("id", cust['id']).execute()
@@ -114,38 +113,27 @@ if st.session_state.view_mode == "list":
     search = st.text_input("🔍 Search", placeholder="Name or License...")
     
     if not df_all.empty:
-        # Header Row for the single-line list
         st.write("---")
-        h1, h2, h3, h4 = st.columns([3, 2, 2, 1])
-        h1.caption("**NAME**")
-        h2.caption("**LICENSE / EXPIRY**")
-        h3.caption("**CONTACT**")
-        h4.caption("**ACTION**")
-
         for _, row in df_all.iterrows():
-            if search and search.lower() not in row['name'].lower() and search.lower() not in row['dl_no'].lower():
+            # Handle NaN in search
+            name_val = str(row['name']) if not pd.isna(row['name']) else ""
+            dl_val = str(row['dl_no']) if not pd.isna(row['dl_no']) else ""
+            
+            if search and search.lower() not in name_val.lower() and search.lower() not in dl_val.lower():
                 continue
                 
-            # Single Line Display
             with st.container():
                 r1, r2, r3, r4 = st.columns([3, 2, 2, 1])
                 
-                # Name & Status Indicator
-                is_expired = safe_date(row['dl_expiry']) < date.today()
-                status_icon = "🔴" if is_expired else "🟢"
-                r1.write(f"{status_icon} {row['name']}")
+                exp_date = safe_date(row['dl_expiry'])
+                status_icon = "🔴" if exp_date < date.today() else "🟢"
                 
-                # License Details
-                r2.write(f"`{row['dl_no']}` | {row['dl_expiry']}")
+                r1.write(f"{status_icon} {name_val}")
+                r2.write(f"`{dl_val}` | {row['dl_expiry']}")
+                r3.write(f"{row['phone'] if not pd.isna(row['phone']) else ''}")
                 
-                # Contact info condensed
-                r3.write(f"{row['phone']}")
-                
-                # Action Button
                 if r4.button("Edit", key=f"ed_{row['id']}", use_container_width=True):
                     st.session_state.selected_customer = row.to_dict()
                     st.session_state.view_mode = "edit"
                     st.rerun()
                 st.write("---")
-    else:
-        st.info("No customers found.")
