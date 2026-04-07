@@ -17,6 +17,11 @@ supabase: Client = create_client(url, key)
 # PAGE LABEL UPDATED TO "Customer"
 st.title("👥 Customer")
 
+# Fetch Company Name for the Header
+c_res = supabase.table("settings").select("config_value").eq("config_key", "company_name").execute()
+company_display = c_res.data[0]['config_value'] if c_res.data else "YOUR RENTAL & TOURS"
+st.caption(f"📍 {company_display}")
+
 # --- 3. SESSION STATE & HELPERS ---
 if 'view_mode' not in st.session_state:
     st.session_state.view_mode = "list"
