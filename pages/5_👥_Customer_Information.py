@@ -15,67 +15,106 @@ supabase: Client = create_client(url, key)
 
 st.title("👥 Customer Information")
 
-# --- 3. ACTION: REGISTER & VERIFY ---
-# Note: clear_on_submit is now FALSE so data stays if there is an error
-with st.expander("➕ Register New Customer (ID Verification)", expanded=True):
-    with st.form("add_customer", clear_on_submit=False):
-        st.subheader("Personal Details")
-        full_name = st.text_input("Full Legal Name (as per Government ID)").strip()
-        dob = st.date_input("Date of Birth", value=date(1995, 1, 1))
-        
-        col1, col2 = st.columns(2)
-        email = col1.text_input("Verified Email Address")
-        phone = col2.text_input("Mobile Phone Number")
-        address = st.text_area("Physical Address (Billing/Legal Notices)")
+# --- 3. FORM VISIBILITY LOGIC ---
+# Initialize the visibility state if it doesn't exist
+if 'show_customer_form' not in st.session_state:
+    st.session_state.show_customer_form = False
 
-        st.divider()
-        st.subheader("Driver's License Compliance")
-        col3, col4 = st.columns(2)
-        dl_no = col3.text_input("License Number").strip().upper()
-        dl_expiry = col4.date_input("License Expiry Date")
-        
-        country = st.selectbox("Country/State of Issue", ["Fiji", "Australia", "New Zealand", "USA", "Other"])
-        license_file = st.file_uploader("Upload ID/License Scan", type=['png', 'jpg', 'jpeg', 'pdf'])
+def toggle_form():
+    st.session_state.show_customer_form = True
 
-        if st.form_submit_button("Verify & Save Customer", use_container_width=True):
-            # Compliance Logic
-            age = (date.today() - dob).days // 365
+def hide_form():
+    st.session_state.show_customer_form = False
+
+# --- 4. THE ADD BUTTON & CONDITIONAL FORM ---
+if not st.session_state.show_customer_form:
+    st.button("➕ Add New Customer", on_click=toggle_form, use_container_width=True)
+else:
+    with st.container(border=True):
+        st.subheader("New Customer Registration")
+        with st.form("add_customer", clear_on_submit=False):
+            st.write("### Personal Details")
+            full_name = st.text_input("Full Legal Name (as per Government ID)").strip()
+            dob = st.date_input("Date of Birth", value=date(1995, 1, 1))
             
-            if not full_name or not dl_no or not email:
-                st.error("Missing required fields: Name, License No, or Email.")
-            elif age < 21:
-                st.error(f"Compliance Violation: Customer age ({age}) is below the minimum requirement of 21.")
-            elif dl_expiry < date.today():
-                # DATA PERSISTENCE: Because clear_on_submit=False, 
-                # the user can now just change this date and click save again.
-                st.error("Compliance Violation: The Driver's License has expired. Please update the date if this was a typo.")
-            else:
-                try:
-                    file_path = None
-                    if license_file:
-                        file_ext = license_file.name.split('.')[-1]
-                        file_path = f"licenses/{dl_no}_{datetime.now().strftime('%Y%m%d')}.{file_ext}"
-                        supabase.storage.from_("license-docs").upload(file_path, license_file.getvalue())
+            col1, col2 = st.columns(2)
+            email = col1.text_input("Verified Email Address")
+            phone = col2.text_input("Mobile Phone Number")
+            address = st.text_area("Physical Address (Billing/Legal Notices)")
 
-                    # Insert Record
-                    supabase.table("customers").insert({
-                        "name": full_name,
-                        "dob": str(dob),
-                        "email": email,
-                        "phone": phone,
-                        "physical_address": address,
-                        "dl_no": dl_no,
-                        "dl_expiry": str(dl_expiry),
-                        "country_of_issue": country,
-                        "license_scan_path": file_path
-                    }).execute()
-                    
-                    st.success(f"Customer {full_name} successfully verified.")
-                    # Only rerun (and thus clear the form) on SUCCESS
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Database Error: {e}")
+            st.divider()
+            st.write("### Driver's License Compliance")
+            col3, col4 = st.columns(2)
+            dl_no = col3.text_input("License Number").strip().upper()
+            dl_expiry = col4.date_input("License Expiry Date")
+            
+            country = st.selectbox("Country/State of Issue", ["Fiji", "Australia", "New Zealand", "USA", "Other"])
+            license_file = st.file_uploader("Upload ID/License Scan", type=['png', 'jpg', 'jpeg', 'pdf'])
 
-# --- 4. CUSTOMER SEARCH & AUDIT ---
+            c1, c2 = st.columns(2)
+            if c1.form_submit_button("Verify & Save", use_container_width=True):
+                # Compliance Logic
+                age = (date.today() - dob).days // 365
+                
+                if not full_name or not dl_no or not email:
+                    st.error("Missing required fields: Name, License No, or Email.")
+                elif age < 21:
+                    st.error(f"Compliance Violation: Customer age ({age}) is below 21.")
+                elif dl_expiry < date.today():
+                    st.error("Compliance Violation: The Driver's License has expired.")
+                else:
+                    try:
+                        file_path = None
+                        if license_file:
+                            file_ext = license_file.name.split('.')[-1]
+                            file_path = f"licenses/{dl_no}_{datetime.now().strftime('%Y%m%d')}.{file_ext}"
+                            supabase.storage.from_("license-docs").upload(file_path, license_file.getvalue())
+
+                        # Insert Record
+                        supabase.table("customers").insert({
+                            "name": full_name,
+                            "dob": str(dob),
+                            "email": email,
+                            "phone": phone,
+                            "physical_address": address,
+                            "dl_no": dl_no,
+                            "dl_expiry": str(dl_expiry),
+                            "country_of_issue": country,
+                            "license_scan_path": file_path
+                        }).execute()
+                        
+                        st.success(f"Customer {full_name} successfully verified.")
+                        
+                        # RESET: Set form visibility back to False to hide it after success
+                        st.session_state.show_customer_form = False
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Database Error: {e}")
+            
+            if c2.form_submit_button("Cancel", use_container_width=True):
+                st.session_state.show_customer_form = False
+                st.rerun()
+
+# --- 5. PERSISTENT CUSTOMER LISTING (Always visible at bottom) ---
 st.divider()
-# ... (Search logic remains the same as previous version)
+st.subheader("Current Customer Registry")
+
+# Search functionality
+search = st.text_input("🔍 Quick Search", placeholder="Name, License, or Email...")
+
+c_res = supabase.table("customers").select("*").order("name").execute()
+
+if c_res.data:
+    df = pd.DataFrame(c_res.data)
+    
+    if search:
+        df = df[df['name'].str.contains(search, case=False) | df['dl_no'].str.contains(search, case=False)]
+
+    # Display clean table for CFO review
+    st.dataframe(
+        df[['name', 'dl_no', 'dl_expiry', 'phone', 'email']], 
+        use_container_width=True, 
+        hide_index=True
+    )
+else:
+    st.info("The registry is currently empty.")
