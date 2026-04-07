@@ -15,6 +15,11 @@ supabase: Client = create_client(url, key)
 
 st.title("🔑 New Rental Agreement")
 
+# Fetch Company Name for the Header
+c_res = supabase.table("settings").select("config_value").eq("config_key", "company_name").execute()
+company_display = c_res.data[0]['config_value'] if c_res.data else "YOUR RENTAL & TOURS"
+st.caption(f"📍 {company_display}")
+
 # --- DATA FETCHING ---
 v_res = supabase.table("fleet").select("id, plate").eq("status", "Available").execute()
 c_res = supabase.table("customers").select("id, name").execute()
