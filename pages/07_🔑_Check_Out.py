@@ -3,12 +3,12 @@ from datetime import datetime, timedelta
 from supabase import create_client, Client
 from streamlit_drawable_canvas import st_canvas
 
-# --- GATEKEEPER ---
+# --- 1. GATEKEEPER ---
 if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
     st.warning("Please log in on the Home page first.")
     st.stop()
 
-# --- CONNECTION ---
+# --- 2. CONNECTION ---
 url: str = st.secrets["SUPABASE_URL"]
 key: str = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
@@ -16,13 +16,13 @@ supabase: Client = create_client(url, key)
 st.title("🔑 New Rental Agreement")
 
 # Fetch Company Name for the Header
-c_res = supabase.table("settings").select("config_value").eq("config_key", "company_name").execute()
-company_display = c_res.data[0]['config_value'] if c_res.data else "YOUR RENTAL & TOURS"
+c_res_settings = supabase.table("settings").select("config_value").eq("config_key", "company_name").execute()
+company_display = c_res_settings.data[0]['config_value'] if c_res_settings.data else "YOUR RENTAL & TOURS"
 st.caption(f"📍 {company_display}")
 
-# --- DATA FETCHING ---
+# --- 3. DATA FETCHING ---
 v_res = supabase.table("fleet").select("id, plate").eq("status", "Available").execute()
-c_res = supabase.table("customers").select("id, name").execute()
+c_res = supabase.table("customers").select("id, name").order("name").execute()
 vat_setting = supabase.table("settings").select("config_value").eq("config_key", "vat_rate").execute()
 vat_pct = float(vat_setting.data[0]['config_value']) if vat_setting.data else 15.0
 
@@ -30,68 +30,95 @@ if not v_res.data:
     st.error("No vehicles available in the fleet.")
     st.stop()
 
-# --- RENTAL FORM ---
-with st.form("checkout_form"):
+# --- 4. QUICK CUSTOMER REGISTER (REDIRECT ALTERNATIVE) ---
+# Allows adding a customer without leaving the page
+with st.expander("👤 Quick Register New Customer", expanded=False):
+    with st.form("quick_cust"):
+        nc_name = st.text_input("Full Legal Name")
+        nc_dl = st.text_input("License No.")
+        if st.form_submit_button("Register & Refresh List"):
+            if nc_name and nc_dl:
+                supabase.table("customers").insert({"name": nc_name, "dl_no": nc_dl}).execute()
+                st.success(f"{nc_name} registered!")
+                st.rerun()
+
+# --- 5. RENTAL FORM (AUTO-CALCULATING) ---
+# Form logic is outside st.form for live calculations, submit handled via button
+with st.container(border=True):
     col1, col2 = st.columns(2)
-    v_choice = col1.selectbox("Vehicle", options=[v['plate'] for v in v_res.data])
-    c_choice = col2.selectbox("Customer", options=[c['name'] for c in c_res.data] if c_res.data else ["No Customers Found"])
+    v_choice = col1.selectbox("Select Available Vehicle", options=[v['plate'] for v in v_res.data], index=None, placeholder="Choose Plate...")
+    c_choice = col2.selectbox("Select Customer", options=[c['name'] for c in c_res.data] if c_res.data else ["No Customers Found"], index=None, placeholder="Choose Name...")
     
     col3, col4 = st.columns(2)
-    date_out = col3.date_input("Out Date", datetime.now())
-    date_in = col4.date_input("Return Date", datetime.now() + timedelta(days=3))
+    # Added time field support
+    date_out = col3.datetime_input("Departure Date & Time", value=datetime.now())
+    date_in = col4.datetime_input("Expected Return Date & Time", value=datetime.now() + timedelta(days=3))
     
-    daily_rate = st.number_input("Daily Rate ($)", min_value=0.0, value=120.0)
-    security_bond = st.number_input("Security Bond ($)", min_value=0.0, value=500.0)
+    # Rate and Deposit on the same line
+    col5, col6 = st.columns(2)
+    daily_rate = col5.number_input("Daily Rental Rate ($)", min_value=0.0, value=120.0)
+    security_bond = col6.number_input("Security Deposit / Bond ($)", min_value=0.0, value=500.0)
     
+    # Granular fuel levels (1/8 increments)
     fuel_out = st.select_slider(
         "Departure Fuel Level",
-        options=["Empty", "1/4", "1/2", "3/4", "Full"],
+        options=["Empty", "1/8", "1/4", "3/8", "1/2", "5/8", "3/4", "7/8", "Full"],
         value="Full"
     )
 
-    st.write("### ✍️ Customer Signature")
-    canvas_result = st_canvas(
-        fill_color="rgba(255, 165, 0, 0.3)",
-        stroke_width=3,
-        stroke_color="#000000",
-        background_color="#eeeeee",
-        height=150,
-        drawing_mode="freedraw",
-        key="canvas",
-    )
-
-    # Calculate Totals
-    duration = (date_in - date_out).days
-    if duration < 1: duration = 1
-    subtotal = (daily_rate * duration) + security_bond
-    tax_total = (daily_rate * duration) * (vat_pct / 100)
+    # --- LIVE FINANCIAL SUMMARY ---
+    duration_delta = date_in - date_out
+    # Calculate fractional days or round up
+    days = max(1, duration_delta.days + (1 if duration_delta.seconds > 3600 else 0))
+    
+    subtotal = (daily_rate * days) + security_bond
+    tax_total = (daily_rate * days) * (vat_pct / 100)
     grand_total = subtotal + tax_total
 
-    st.divider()
-    st.write(f"**Subtotal:** ${subtotal:,.2f} | **VAT ({vat_pct}%):** ${tax_total:,.2f}")
-    st.subheader(f"Grand Total: ${grand_total:,.2f}")
+    st.markdown(f"""
+    <div style="background-color:#f0f2f6; padding:15px; border-radius:10px; border-left: 5px solid #ff4b4b;">
+        <h4 style="margin:0;">Live Quote Summary</h4>
+        <p style="margin:5px 0;">Duration: <b>{days} Day(s)</b> | Subtotal: <b>${subtotal:,.2f}</b></p>
+        <p style="margin:0;">VAT ({vat_pct}%): <b>${tax_total:,.2f}</b></p>
+        <h3 style="margin:10px 0 0 0; color:#ff4b4b;">Grand Total: ${grand_total:,.2f}</h3>
+    </div>
+    """, unsafe_content_html=True)
 
-    if st.form_submit_button("Finalize & Save Agreement", use_container_width=True):
-        if canvas_result.image_data is not None and c_choice != "No Customers Found":
-            vid = [v['id'] for v in v_res.data if v['plate'] == v_choice][0]
-            cid = [c['id'] for c in c_res.data if c['name'] == c_choice][0]
-            
-            supabase.table("rentals").insert({
-                "vehicle_id": vid, 
-                "customer_id": cid, 
-                "rate": daily_rate,
-                "days": duration, 
-                "subtotal": subtotal,
-                "tax_amount": tax_total,
-                "total": grand_total, 
-                "fuel_out": fuel_out,
-                "date_out": str(date_out), 
-                "date_in": str(date_in),
-                "status": "Active"
-            }).execute()
-            
-            supabase.table("fleet").update({"status": "Rented"}).eq("id", vid).execute()
-            st.success("Agreement Saved!")
-            st.rerun()
+    st.divider()
+    st.write("### ✍️ Customer Signature")
+    canvas_result = st_canvas(
+        stroke_width=3, stroke_color="#000000", background_color="#eeeeee",
+        height=150, drawing_mode="freedraw", key="canvas_checkout",
+    )
+
+    if st.button("Finalize & Save Agreement", use_container_width=True, type="primary"):
+        if not v_choice or not c_choice or c_choice == "No Customers Found":
+            st.error("Please select both a vehicle and a customer.")
+        elif canvas_result.image_data is None:
+            st.error("Customer signature is required to proceed.")
         else:
-            st.error("Signature required and a valid customer must be selected.")
+            try:
+                vid = [v['id'] for v in v_res.data if v['plate'] == v_choice][0]
+                cid = [c['id'] for c in c_res.data if c['name'] == c_choice][0]
+                
+                # Payload matching your reports table schema
+                supabase.table("rentals").insert({
+                    "vehicle_id": vid, 
+                    "customer_id": cid, 
+                    "rate": daily_rate,
+                    "days": days, 
+                    "subtotal": subtotal,
+                    "tax_amount": tax_total,
+                    "total": grand_total, 
+                    "fuel_out": fuel_out,
+                    "date_out": date_out.isoformat(), 
+                    "date_in": date_in.isoformat(),
+                    "status": "Active"
+                }).execute()
+                
+                # Update Fleet Status
+                supabase.table("fleet").update({"status": "Rented"}).eq("id", vid).execute()
+                st.success(f"Agreement Finalized for {v_choice}!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Save Failed: {e}")
