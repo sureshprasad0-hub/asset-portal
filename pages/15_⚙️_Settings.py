@@ -14,11 +14,9 @@ c_res = supabase.table("settings").select("config_value").eq("config_key", "comp
 company_display = c_res.data[0]['config_value'] if c_res.data else "YOUR RENTAL & TOURS"
 st.caption(f"📍 {company_display}")
 
-# --- 3. COMPANY CONFIGURATION (FIRST ITEM) ---
+# --- 3. COMPANY CONFIGURATION ---
 with st.expander("🏢 Company Branding", expanded=True):
-    # Fetch current Company Name
     c_res = supabase.table("settings").select("config_value").eq("config_key", "company_name").execute()
-    # Default to "YOUR RENTAL & TOURS" as requested
     current_name = c_res.data[0]['config_value'] if c_res.data else "YOUR RENTAL & TOURS"
     
     new_name = st.text_input("Organisation Name", value=current_name).strip().upper()
@@ -38,19 +36,67 @@ with st.expander("💰 VAT & Financials", expanded=False):
         supabase.table("settings").upsert({"config_key": "vat_rate", "config_value": str(new_vat)}).execute()
         st.success(f"VAT updated to {new_vat}%")
 
-# --- 5. USER MANAGEMENT ---
+# --- 5. STAFF ACCOUNT MANAGEMENT (UPDATED) ---
 with st.expander("👥 Staff Account Management", expanded=False):
-    st.subheader("Add Staff Account")
-    with st.form("new_user"):
-        u, p = st.text_input("Username"), st.text_input("Password")
-        r = st.selectbox("Role", ["Staff", "Manager", "Admin"])
-        if st.form_submit_button("Create User"):
-            supabase.table("portal_users").insert({"username":u, "password_hash":p, "role":r, "full_name":u.title()}).execute()
-            st.success("User added.")
+    # Fetch current users
+    u_res = supabase.table("portal_users").select("*").order("username").execute()
+    user_list = u_res.data if u_res.data else []
+    usernames = [u['username'] for u in user_list]
+
+    col_u1, col_u2 = st.columns(2)
+
+    with col_u1:
+        st.subheader("Add New Staff")
+        with st.form("new_user_form", clear_on_submit=True):
+            new_u = st.text_input("Username").strip().lower()
+            new_p = st.text_input("Password", type="password")
+            new_r = st.selectbox("Assign Role", ["Staff", "Manager", "Admin"])
+            if st.form_submit_button("Create Account"):
+                if new_u and new_p:
+                    if new_u not in usernames:
+                        supabase.table("portal_users").insert({
+                            "username": new_u, 
+                            "password_hash": new_p, 
+                            "role": new_r, 
+                            "full_name": new_u.title()
+                        }).execute()
+                        st.success(f"Account created for {new_u}")
+                        st.rerun()
+                    else:
+                        st.error("Username already exists.")
+                else:
+                    st.error("Please provide both username and password.")
+
+    with col_u2:
+        st.subheader("Modify / Delete Staff")
+        if usernames:
+            selected_u = st.selectbox("Select Account", options=usernames)
+            # Find the data for the selected user
+            user_data = next(u for u in user_list if u['username'] == selected_u)
+            
+            # Change Role
+            current_role_idx = ["Staff", "Manager", "Admin"].index(user_data['role'])
+            new_role = st.selectbox("Update Role", ["Staff", "Manager", "Admin"], index=current_role_idx)
+            
+            if st.button("Update User Role"):
+                supabase.table("portal_users").update({"role": new_role}).eq("username", selected_u).execute()
+                st.success(f"Updated {selected_u} to {new_role}")
+                st.rerun()
+
+            st.divider()
+            # Delete account (with safety check)
+            if st.button(f"🗑️ Delete {selected_u}", type="secondary"):
+                if selected_u == st.session_state.get('username'):
+                    st.error("You cannot delete your own account.")
+                else:
+                    supabase.table("portal_users").delete().eq("username", selected_u).execute()
+                    st.warning(f"Account {selected_u} has been removed.")
+                    st.rerun()
+        else:
+            st.info("No other accounts found.")
 
 # --- 6. BRAND MANAGEMENT ---
 with st.expander("📋 Fleet Brand Setup", expanded=False):
-    # Fetch current brands
     b_res = supabase.table("vehicle_brands").select("*").order("brand_name").execute()
     brands = [b['brand_name'] for b in b_res.data] if b_res.data else []
 
@@ -65,14 +111,13 @@ with st.expander("📋 Fleet Brand Setup", expanded=False):
     with col_b:
         if brands:
             remove_brand = st.selectbox("Remove Existing Brand", options=brands)
-            if st.button("Delete Brand", type="secondary"):
+            if st.button("Delete Brand", key="del_brand", type="secondary"):
                 supabase.table("vehicle_brands").delete().eq("brand_name", remove_brand).execute()
                 st.warning(f"Removed {remove_brand}")
                 st.rerun()
 
 # --- 7. LOCATION MANAGEMENT ---
 with st.expander("📍 Branch Location Setup", expanded=False):
-    # Fetch current locations
     loc_res = supabase.table("operating_locations").select("*").order("location_name").execute()
     locations = [l['location_name'] for l in loc_res.data] if loc_res.data else []
 
@@ -87,7 +132,7 @@ with st.expander("📍 Branch Location Setup", expanded=False):
     with col_d:
         if locations:
             remove_loc = st.selectbox("Remove Branch", options=locations)
-            if st.button("Delete Location", type="secondary"):
+            if st.button("Delete Location", key="del_loc", type="secondary"):
                 supabase.table("operating_locations").delete().eq("location_name", remove_loc).execute()
                 st.warning(f"Removed {remove_loc}")
                 st.rerun()
