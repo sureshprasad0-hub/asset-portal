@@ -15,6 +15,11 @@ supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
 st.title("📊 Business Intelligence & Reports")
 
+# Fetch Company Name for the Header
+c_res = supabase.table("settings").select("config_value").eq("config_key", "company_name").execute()
+company_display = c_res.data[0]['config_value'] if c_res.data else "YOUR RENTAL & TOURS"
+st.caption(f"📍 {company_display}")
+
 # --- 3. REPORT SETTINGS (MAIN TAB AREA) ---
 # Moved from sidebar to the main page as requested
 with st.expander("🛠️ Report Settings & Filters", expanded=True):

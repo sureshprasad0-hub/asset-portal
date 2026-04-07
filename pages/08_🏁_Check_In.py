@@ -17,6 +17,11 @@ supabase = init_connection()
 st.title("🏁 Vehicle Check-In & Inspection")
 st.write("Complete this form when a vehicle is returned to the yard.")
 
+# Fetch Company Name for the Header
+c_res = supabase.table("settings").select("config_value").eq("config_key", "company_name").execute()
+company_display = c_res.data[0]['config_value'] if c_res.data else "YOUR RENTAL & TOURS"
+st.caption(f"📍 {company_display}")
+
 # --- 3. FETCH ACTIVE RENTALS ---
 # We join with fleet and customers to give the staff clear context
 r_res = supabase.table("rentals").select(
