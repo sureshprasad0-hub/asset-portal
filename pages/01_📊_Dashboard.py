@@ -8,6 +8,11 @@ supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
 st.title("📊 Dashboard")
 
+# Fetch Company Name for the Header
+c_res = supabase.table("settings").select("config_value").eq("config_key", "company_name").execute()
+company_display = c_res.data[0]['config_value'] if c_res.data else "YOUR RENTAL & TOURS"
+st.caption(f"📍 {company_display}")
+
 # --- 1. OVERDUE RENTALS ---
 r_res = supabase.table("rentals").select("*, fleet(plate), customers(name)").eq("status", "Active").execute()
 overdue_count = 0
