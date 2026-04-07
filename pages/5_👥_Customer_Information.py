@@ -23,8 +23,11 @@ if 'selected_customer' not in st.session_state:
     st.session_state.selected_customer = None
 
 def safe_date(date_val, default=date(1995, 1, 1)):
-    if date_val is None or pd.isna(date_val): return default
+    """Prevents JSON/NaN crashes by ensuring a valid date object is always returned."""
+    if date_val is None or pd.isna(date_val) or date_val == "":
+        return default
     try:
+        # Handles both string dates from Supabase and date objects
         return datetime.strptime(str(date_val), '%Y-%m-%d').date()
     except:
         return default
@@ -33,13 +36,14 @@ def safe_date(date_val, default=date(1995, 1, 1)):
 res = supabase.table("customers").select("*").order("name").execute()
 df_all = pd.DataFrame(res.data) if res.data else pd.DataFrame()
 
-# --- 5. TOP SECTION: STATS ---
+# --- 5. TOP SECTION: STATS DASHBOARD (Visible in List Mode) ---
 if st.session_state.view_mode == "list":
     if not df_all.empty:
         st.write("### 📊 Registry Overview")
         col_a, col_b, col_c = st.columns(3)
         
         total_cust = len(df_all)
+        # Calculate expiry using safe_date helper to avoid NaN errors
         df_all['temp_expiry'] = df_all['dl_expiry'].apply(lambda x: safe_date(x, default=date.today()))
         expired_count = len(df_all[df_all['temp_expiry'] < date.today()])
         intl_count = len(df_all[df_all['country_of_issue'] != 'Fiji'])
@@ -75,11 +79,12 @@ if st.session_state.view_mode in ["add", "edit"]:
             def_idx = countries.index(cust['country_of_issue']) if cust and cust.get('country_of_issue') in countries else 0
             f_country = st.selectbox("Issue Country", countries, index=def_idx)
             
-            st.write("### ID Document Management (Optional)")
+            # --- IMAGE SECTION (OPTIONAL) ---
+            st.write("### ID Document Management")
             if cust and cust.get('license_scan_path'):
                 try:
                     img_url = supabase.storage.from_("license-docs").create_signed_url(cust['license_scan_path'], 60)
-                    st.info("✅ ID Scan exists for this customer.")
+                    st.info("✅ ID Scan is on file.")
                     st.link_button("👁️ View Existing ID Scan", img_url['signedURL'])
                 except:
                     st.caption("No accessible ID scan found.")
@@ -88,18 +93,21 @@ if st.session_state.view_mode in ["add", "edit"]:
 
             sub_col, can_col = st.columns(2)
             if sub_col.form_submit_button("💾 Save Record", use_container_width=True):
+                # Age & Expiry Logic
                 age = (date.today() - f_dob).days // 365
                 if not f_name or not f_dl:
-                    st.error("Name and License Number are mandatory.")
+                    st.error("Full Name and License Number are mandatory.")
                 elif age < 21:
-                    st.error(f"Compliance Error: Age is {age} (Min 21 required).")
+                    st.error(f"Compliance Error: Customer age is below 21.")
                 elif f_expiry < date.today():
-                    st.error("Compliance Error: License has expired.")
+                    st.error("Compliance Error: Driver's License has expired.")
                 else:
                     try:
-                        # Keep current path if it exists and no new file is uploaded
+                        # OPTIONAL IMAGE LOGIC:
+                        # 1. Start with existing path (if editing)
                         f_path = cust.get('license_scan_path') if cust else None
                         
+                        # 2. Update path only if a new file is uploaded
                         if license_file:
                             file_ext = license_file.name.split('.')[-1]
                             f_path = f"licenses/{f_dl}_{datetime.now().strftime('%Y%m%d')}.{file_ext}"
@@ -125,14 +133,15 @@ if st.session_state.view_mode in ["add", "edit"]:
                 st.session_state.view_mode = "list"
                 st.rerun()
 
-# --- 7. LIST VIEW ---
+# --- 7. LIST VIEW (SINGLE LINE REGISTRY) ---
 if st.session_state.view_mode == "list":
     st.button("➕ Add New Customer", on_click=lambda: st.session_state.update({"view_mode": "add"}), use_container_width=True)
     
-    search = st.text_input("🔍 Search", placeholder="Name or License...")
+    search = st.text_input("🔍 Search Registry", placeholder="Search by name or license...")
     
     if not df_all.empty:
         st.write("---")
+        # Header Row
         h1, h2, h3, h4 = st.columns([3, 2, 2, 1])
         h1.caption("**NAME / STATUS**")
         h2.caption("**LICENSE / EXPIRY**")
@@ -140,14 +149,16 @@ if st.session_state.view_mode == "list":
         h4.caption("**ACTION**")
 
         for _, row in df_all.iterrows():
-            s_name = str(row['name']) if not pd.isna(row['name']) else "N/A"
-            s_dl = str(row['dl_no']) if not pd.isna(row['dl_no']) else "N/A"
+            s_name = str(row['name']) if not pd.isna(row['name']) else ""
+            s_dl = str(row['dl_no']) if not pd.isna(row['dl_no']) else ""
             
             if search and search.lower() not in s_name.lower() and search.lower() not in s_dl.lower():
                 continue
                 
             with st.container():
                 r1, r2, r3, r4 = st.columns([3, 2, 2, 1])
+                
+                # Visual Expiry indicator
                 is_expired = safe_date(row['dl_expiry']) < date.today()
                 icon = "🔴" if is_expired else "🟢"
                 
@@ -156,9 +167,10 @@ if st.session_state.view_mode == "list":
                 r3.write(f"{row['phone'] if not pd.isna(row['phone']) else ''}")
                 
                 if r4.button("Edit", key=f"ed_{row['id']}", use_container_width=True):
+                    # Convert series to dict for session state
                     st.session_state.selected_customer = row.to_dict()
                     st.session_state.view_mode = "edit"
                     st.rerun()
                 st.write("---")
     else:
-        st.info("No customers found.")
+        st.info("No customers found in the registry.")
