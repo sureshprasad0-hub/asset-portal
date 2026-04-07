@@ -40,7 +40,6 @@ if st.session_state.view_mode == "list":
         col_a, col_b, col_c = st.columns(3)
         
         total_cust = len(df_all)
-        # Handle dates safely for metrics
         df_all['temp_expiry'] = df_all['dl_expiry'].apply(lambda x: safe_date(x, default=date.today()))
         expired_count = len(df_all[df_all['temp_expiry'] < date.today()])
         intl_count = len(df_all[df_all['country_of_issue'] != 'Fiji'])
@@ -76,18 +75,16 @@ if st.session_state.view_mode in ["add", "edit"]:
             def_idx = countries.index(cust['country_of_issue']) if cust and cust.get('country_of_issue') in countries else 0
             f_country = st.selectbox("Issue Country", countries, index=def_idx)
             
-            # --- IMAGE SECTION RE-INCLUDED ---
-            st.write("### ID Document Management")
+            st.write("### ID Document Management (Optional)")
             if cust and cust.get('license_scan_path'):
                 try:
-                    # Generate a secure 60-second link to view the image
                     img_url = supabase.storage.from_("license-docs").create_signed_url(cust['license_scan_path'], 60)
                     st.info("✅ ID Scan exists for this customer.")
                     st.link_button("👁️ View Existing ID Scan", img_url['signedURL'])
                 except:
-                    st.warning("⚠️ ID scan path found but file is inaccessible.")
+                    st.caption("No accessible ID scan found.")
 
-            license_file = st.file_uploader("Upload New/Replacement ID Scan", type=['png', 'jpg', 'jpeg', 'pdf'])
+            license_file = st.file_uploader("Upload ID Scan (Optional)", type=['png', 'jpg', 'jpeg', 'pdf'])
 
             sub_col, can_col = st.columns(2)
             if sub_col.form_submit_button("💾 Save Record", use_container_width=True):
@@ -100,7 +97,7 @@ if st.session_state.view_mode in ["add", "edit"]:
                     st.error("Compliance Error: License has expired.")
                 else:
                     try:
-                        # Keep existing path unless a new file is uploaded
+                        # Keep current path if it exists and no new file is uploaded
                         f_path = cust.get('license_scan_path') if cust else None
                         
                         if license_file:
@@ -128,7 +125,7 @@ if st.session_state.view_mode in ["add", "edit"]:
                 st.session_state.view_mode = "list"
                 st.rerun()
 
-# --- 7. LIST VIEW (SINGLE LINE) ---
+# --- 7. LIST VIEW ---
 if st.session_state.view_mode == "list":
     st.button("➕ Add New Customer", on_click=lambda: st.session_state.update({"view_mode": "add"}), use_container_width=True)
     
@@ -136,7 +133,6 @@ if st.session_state.view_mode == "list":
     
     if not df_all.empty:
         st.write("---")
-        # Header for the single line registry
         h1, h2, h3, h4 = st.columns([3, 2, 2, 1])
         h1.caption("**NAME / STATUS**")
         h2.caption("**LICENSE / EXPIRY**")
@@ -144,17 +140,14 @@ if st.session_state.view_mode == "list":
         h4.caption("**ACTION**")
 
         for _, row in df_all.iterrows():
-            # Clean strings for search to avoid NaN issues
-            s_name = str(row['name']) if not pd.isna(row['name']) else ""
-            s_dl = str(row['dl_no']) if not pd.isna(row['dl_no']) else ""
+            s_name = str(row['name']) if not pd.isna(row['name']) else "N/A"
+            s_dl = str(row['dl_no']) if not pd.isna(row['dl_no']) else "N/A"
             
             if search and search.lower() not in s_name.lower() and search.lower() not in s_dl.lower():
                 continue
                 
             with st.container():
                 r1, r2, r3, r4 = st.columns([3, 2, 2, 1])
-                
-                # Expiry Status
                 is_expired = safe_date(row['dl_expiry']) < date.today()
                 icon = "🔴" if is_expired else "🟢"
                 
