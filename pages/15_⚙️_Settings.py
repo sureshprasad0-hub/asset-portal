@@ -1,5 +1,6 @@
 import streamlit as st
 from supabase import create_client
+import base64
 
 # --- 1. GATEKEEPER: ADMIN ONLY ---
 if st.session_state.get('user_role') != 'Admin':
@@ -17,7 +18,7 @@ st.caption(f"📍 {company_display}")
 # --- 3. COMPANY CONFIGURATION ---
 with st.expander("🏢 Company Branding", expanded=True):
     # Fetch all branding settings at once
-    set_res = supabase.table("settings").select("*").in_("config_key", ["company_name", "company_address", "company_phone", "company_email"]).execute()
+    set_res = supabase.table("settings").select("*").in_("config_key", ["company_name", "company_address", "company_phone", "company_email", "company_logo"]).execute()
     settings_dict = {item['config_key']: item['config_value'] for item in set_res.data}
     
     col_branding1, col_branding2 = st.columns(2)
@@ -26,25 +27,37 @@ with st.expander("🏢 Company Branding", expanded=True):
         new_name = st.text_input("Organisation Name", value=settings_dict.get("company_name", "YOUR RENTAL & TOURS")).strip().upper()
         new_address = st.text_input("Physical Address", value=settings_dict.get("company_address", "Suva, Fiji")).strip()
         
+        # LOGO UPLOADER
+        st.write("**Company Logo**")
+        uploaded_logo = st.file_uploader("Upload Logo (PNG/JPG)", type=['png', 'jpg', 'jpeg'])
+        current_logo = settings_dict.get("company_logo")
+        if current_logo:
+            st.image(current_logo, width=100, caption="Current Logo")
+        
     with col_branding2:
         new_email = st.text_input("Business Email", value=settings_dict.get("company_email", "info@rental.com.fj")).strip()
         new_phone = st.text_input("Phone Number", value=settings_dict.get("company_phone", "+679")).strip()
     
     if st.button("Update Organisation Details"):
-        # Save each field to the settings table
         payload = [
             {"config_key": "company_name", "config_value": new_name},
             {"config_key": "company_address", "config_value": new_address},
             {"config_key": "company_email", "config_value": new_email},
             {"config_key": "company_phone", "config_value": new_phone}
         ]
+        
+        # Handle Logo conversion to Base64 for easy storage in Settings table
+        if uploaded_logo:
+            encoded_logo = base64.b64encode(uploaded_logo.read()).decode()
+            logo_data_url = f"data:image/png;base64,{encoded_logo}"
+            payload.append({"config_key": "company_logo", "config_value": logo_data_url})
+
         supabase.table("settings").upsert(payload).execute()
         st.success("Organisation details updated successfully.")
         st.rerun()
 
 # --- 4. VAT & FINANCIAL CONFIGURATION ---
 with st.expander("💰 VAT & Financials", expanded=False):
-    # --- VAT Section ---
     res_vat = supabase.table("settings").select("config_value").eq("config_key", "vat_rate").execute()
     current_vat = float(res_vat.data[0]['config_value']) if res_vat.data else 15.0
     new_vat = st.number_input("Global Fiji VAT Rate (%)", value=current_vat, step=0.5)
@@ -55,10 +68,8 @@ with st.expander("💰 VAT & Financials", expanded=False):
 
     st.divider()
 
-    # --- Fuel Surcharge Section ---
     res_fuel = supabase.table("settings").select("config_value").eq("config_key", "fuel_surcharge").execute()
     current_fuel = float(res_fuel.data[0]['config_value']) if res_fuel.data else 0.00
-    
     new_fuel = st.number_input("Fuel Surcharge per Litre ($)", value=current_fuel, min_value=0.00, step=0.01, format="%.2f")
 
     if st.button("Update Fuel Surcharge"):
@@ -100,7 +111,6 @@ with st.expander("👥 Staff Account Management", expanded=False):
         if usernames:
             selected_u = st.selectbox("Select Account", options=usernames)
             user_data = next(u for u in user_list if u['username'] == selected_u)
-            
             current_role_idx = ["Staff", "Manager", "Admin"].index(user_data['role'])
             new_role = st.selectbox("Update Role", ["Staff", "Manager", "Admin"], index=current_role_idx)
             
