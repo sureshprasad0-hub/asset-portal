@@ -27,98 +27,99 @@ c_res = supabase.table("customers").select("id, name").order("name").execute()
 vat_setting = supabase.table("settings").select("config_value").eq("config_key", "vat_rate").execute()
 vat_pct = float(vat_setting.data[0]['config_value']) if vat_setting.data else 15.0
 
-# Fetch Active Rentals for the Registry
-active_rentals_res = supabase.table("rentals").select("*, fleet(plate, model), customers(name)").eq("status", "Active").order("date_out", desc=True).execute()
+if not v_res.data:
+    st.error("No vehicles are currently Available in the yard.")
+    st.stop()
 
-# --- 4. QUICK CUSTOMER REGISTER ---
-with st.expander("👤 Quick Register New Customer", expanded=False):
-    with st.form("quick_cust"):
-        nc_name = st.text_input("Full Legal Name")
-        nc_dl = st.text_input("License No.")
-        if st.form_submit_button("Register & Refresh List"):
-            if nc_name and nc_dl:
-                supabase.table("customers").insert({"name": nc_name, "dl_no": nc_dl}).execute()
-                st.success(f"{nc_name} registered!")
-                st.rerun()
-
-# --- 5. RENTAL FORM ---
-with st.container(border=True):
-    col1, col2 = st.columns(2)
-    v_choice = col1.selectbox("Select Available Vehicle", options=[v['plate'] for v in v_res.data], index=None, placeholder="Choose Plate...")
-    c_choice = col2.selectbox("Select Customer", options=[c['name'] for c in c_res.data] if c_res.data else ["No Customers Found"], index=None, placeholder="Choose Name...")
+# --- 4. RENTAL FORM ---
+with st.form("rental_form"):
+    v_choice = st.selectbox("Select Vehicle", options=[v['plate'] for v in v_res.data])
+    c_choice = st.selectbox("Select Customer", options=[c['name'] for c in c_res.data])
     
     # --- ODOMETER DISPLAY (Added) ---
-    if v_choice:
-        current_odo = next((v['odometer'] for v in v_res.data if v['plate'] == v_choice), 0)
-        st.info(f"📟 **Departure Odometer Reading:** {current_odo:,} km")
-    
-    col3, col4 = st.columns(2)
-    date_out = col3.date_input("Departure Date", value=date.today())
-    date_in = col4.date_input("Expected Return Date", value=date.today() + timedelta(days=3))
-    
-    col5, col6 = st.columns(2)
-    daily_rate = col5.number_input("Daily Rental Rate ($)", min_value=0.0, value=120.0)
-    security_bond = col6.number_input("Security Deposit / Bond ($)", min_value=0.0, value=500.0)
-    
-    fuel_out = st.select_slider(
-        "Departure Fuel Level",
-        options=["Empty", "1/8", "1/4", "3/8", "1/2", "5/8", "3/4", "7/8", "Full"],
-        value="Full"
+    # Fetch mileage for the currently selected plate
+    current_odo = next((v['odometer'] for v in v_res.data if v['plate'] == v_choice), 0)
+    st.info(f"📟 **Departure Odometer Reading:** {current_odo:,} km")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        date_out = st.date_input("Date Out", value=date.today())
+        daily_rate = st.number_input("Daily Rate ($)", min_value=0.0, value=85.0, step=5.0)
+    with col2:
+        date_in = st.date_input("Target Return", value=date.today() + timedelta(days=3))
+        fuel_out = st.select_slider("Fuel Level Out", options=["Empty", "1/4", "1/2", "3/4", "Full"], value="Full")
+
+    st.write("### Customer Signature")
+    canvas_result = st_canvas(
+        stroke_width=2, stroke_color="#000", background_color="#eee",
+        height=150, update_streamlit=True, key="sig_checkout"
     )
 
-    # Financial Calculations
-    try:
-        days = (date_in - date_out).days or 1
-        subtotal = float((daily_rate * days) + security_bond)
-        tax_total = float((daily_rate * days) * (vat_pct / 100))
-        grand_total = float(subtotal + tax_total)
-
-        st.markdown(f"""
-        <div style="background-color:#f0f2f6; padding:15px; border-radius:10px; border-left: 5px solid #ff4b4b;">
-            <h4 style="margin:0; color:#31333F;">Live Quote Summary</h4>
-            <p style="margin:5px 0; color:#31333F;">Duration: <b>{days} Day(s)</b> | Subtotal: <b>${subtotal:,.2f}</b></p>
-            <p style="margin:0; color:#31333F;">VAT ({vat_pct}%): <b>${tax_total:,.2f}</b></p>
-            <h3 style="margin:10px 0 0 0; color:#ff4b4b;">Grand Total: ${grand_total:,.2f}</h3>
-        </div>
-        """, unsafe_allow_html=True)
-    except Exception:
-        st.error("Select valid dates to calculate total.")
-        days, subtotal, tax_total, grand_total = 1, 0.0, 0.0, 0.0
+    # Calculation logic for UI preview
+    days = (date_in - date_out).days or 1
+    subtotal = daily_rate * days
+    tax_total = subtotal * (vat_pct / 100)
+    grand_total = subtotal + tax_total
 
     st.divider()
-    st.write("### ✍️ Customer Signature")
-    canvas_result = st_canvas(
-        stroke_width=3, stroke_color="#000000", background_color="#eeeeee",
-        height=150, drawing_mode="freedraw", key="canvas_checkout",
-    )
+    st.markdown(f"**Total Days:** {days} | **Subtotal:** ${subtotal:,.2f} | **VAT ({vat_pct}%):** ${tax_total:,.2f}")
+    st.subheader(f"Grand Total: ${grand_total:,.2f}")
 
-    if st.button("Finalize & Save Agreement", use_container_width=True, type="primary"):
-        if not v_choice or not c_choice:
-            st.error("Please select both a vehicle and a customer.")
-        elif canvas_result.image_data is None:
-            st.error("Customer signature is required.")
-        else:
+    if st.form_submit_button("Finalize & Save Agreement", use_container_width=True, type="primary"):
+        if canvas_result.image_data is not None:
             try:
-                vid = [v['id'] for v in v_res.data if v['plate'] == v_choice][0]
-                cid = [c['id'] for c in c_res.data if c['name'] == c_choice][0]
+                # Resolve IDs
+                vid = next(v['id'] for v in v_res.data if v['plate'] == v_choice)
+                cid = next(c['id'] for c in c_res.data if c['name'] == c_choice)
                 
-                # Insert including odo_out
+                # Create Rental Record (Including odo_out)
                 supabase.table("rentals").insert({
-                    "vehicle_id": vid, "customer_id": cid, "rate": daily_rate,
-                    "days": days, "subtotal": subtotal, "tax_amount": tax_total,
-                    "total": grand_total, "fuel_out": fuel_out,
-                    "odo_out": current_odo, # Capturing the mileage here
-                    "date_out": date_out.isoformat(), "date_in": date_in.isoformat(),
+                    "vehicle_id": vid, 
+                    "customer_id": cid, 
+                    "rate": daily_rate,
+                    "days": days, 
+                    "subtotal": subtotal,
+                    "tax_amount": tax_total,
+                    "total": grand_total, 
+                    "fuel_out": fuel_out,
+                    "odo_out": current_odo, # Recorded departure mileage
+                    "date_out": date_out.isoformat(), 
+                    "date_in": date_in.isoformat(),
                     "status": "Active"
                 }).execute()
                 
+                # Mark as Rented
                 supabase.table("fleet").update({"status": "Rented"}).eq("id", vid).execute()
-                st.success("Agreement Finalized!")
+                
+                st.success(f"Success! {v_choice} has been checked out.")
                 st.rerun()
             except Exception as e:
-                st.error(f"Save Failed: {e}")
+                st.error(f"Error saving agreement: {e}")
+        else:
+            st.warning("Please provide a signature before finalizing.")
 
-# --- 6. ACTIVE RENTALS REGISTRY ---
+# --- 5. ACTIVE AGREEMENTS REGISTRY ---
 st.write("---")
-st.subheader("📋 Active Rental Registry")
-# ... [rest of the registry code as provided in your prompt] ...
+st.subheader("📋 Currently Active Agreements")
+rent_res = supabase.table("rentals").select(
+    "id, total, date_out, fuel_out, fleet(plate, model), customers(name)"
+).eq("status", "Active").execute()
+
+if rent_res.data:
+    for rent in rent_res.data:
+        with st.container(border=True):
+            r1, r2, r3, r4 = st.columns([3, 3, 2, 1])
+            r1.write(f"🚗 **{rent['fleet']['plate']}**")
+            r1.caption(f"{rent['fleet']['model']}")
+            
+            r2.write(f"👤 **{rent['customers']['name']}**")
+            r2.caption(f"Out: {rent['date_out']}")
+            
+            r3.write(f"💰 **${float(rent['total']):,.2f}**")
+            r3.caption(f"Fuel: {rent['fuel_out']}")
+            
+            if r4.button("View", key=f"v_{rent['id']}", use_container_width=True):
+                st.session_state[f"detail_{rent['id']}"] = not st.session_state.get(f"detail_{rent['id']}", False)
+            
+            if st.session_state.get(f"detail_{rent['id']}", False):
+                st.info(f"Agreement ID: {rent['id']}")
