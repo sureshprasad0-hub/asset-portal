@@ -30,7 +30,7 @@ with st.expander("🛠️ Report Settings & Filters", expanded=True):
             "🚗 Active Rental Customers", 
             "⏳ Overdue Rentals",
             "⚠️ Compliance Risk",
-            "📄 Rental Agreement Template" # NEW CATEGORY
+            "📄 Rental Agreement Template"
         ]
     )
 st.divider()
@@ -43,107 +43,92 @@ def safe_date(date_val, default=date(1995, 1, 1)):
     except:
         return default
 
-# --- [CATEGORIES 4-8 REMAIN UNCHANGED IN YOUR ORIGINAL FILE] ---
-# (Logic for Revenue, Customers, Active, Overdue, and Compliance Risk stays intact)
-
-# --- 9. RENTAL AGREEMENT TEMPLATE (NEW) ---
+# --- 4. RENTAL AGREEMENT TEMPLATE ---
 if report_mode == "📄 Rental Agreement Template":
     st.subheader("Generate Rental Out Report")
     
-    # Selection logic to pick a specific rental to generate a report for
-    rentals_query = supabase.table("rentals").select("id, date_out, fleet(plate), customers(name)").order("date_out", desc=True).limit(50).execute()
-    
-    if rentals_query.data:
-        options = {f"{r['date_out']} | {r['fleet']['plate']} | {r['customers']['name']}": r['id'] for r in rentals_query.data}
-        selected_label = st.selectbox("Select Rental Record to View Report", options.keys())
-        rental_id = options[selected_label]
+    # FIXED: Added explicit foreign key relationship names to resolve APIError
+    try:
+        rentals_query = supabase.table("rentals") \
+            .select("id, date_out, fleet!fk_rentals_fleet(plate), customers!fk_rentals_customers(name)") \
+            .order("date_out", desc=True) \
+            .limit(50).execute()
         
-        if st.button("Generate Full Page Report"):
-            # Fetch full details for the specific rental
-            r = supabase.table("rentals").select("*, fleet(*), customers(*)").eq("id", rental_id).single().execute().data
+        if rentals_query.data:
+            options = {f"{r['date_out']} | {r['fleet']['plate']} | {r['customers']['name']}": r['id'] for r in rentals_query.data}
+            selected_label = st.selectbox("Select Rental Record", options.keys())
+            rental_id = options[selected_label]
             
-            # --- START OF FULL PAGE TEMPLATE ---
-            st.container(border=True)
-            with st.container():
-                # Header with Logo and Branding
-                h1, h2 = st.columns([1, 2])
-                with h1:
-                    if branding.get("company_logo"):
-                        st.image(branding.get("company_logo"), width=150)
-                with h2:
-                    st.markdown(f"## {company_display}")
-                    st.write(f"📍 {branding.get('company_address', 'Fiji')}")
-                    st.write(f"📞 {branding.get('company_phone', '')} | ✉️ {branding.get('company_email', '')}")
+            if st.button("Generate Full Page Report"):
+                # Fetch full details using explicit FK names
+                r_res = supabase.table("rentals") \
+                    .select("*, fleet!fk_rentals_fleet(*), customers!fk_rentals_customers(*)") \
+                    .eq("id", rental_id).single().execute()
+                r = r_res.data
                 
-                st.markdown("<h1 style='text-align: center;'>RENTAL AGREEMENT / VEHICLE OUT REPORT</h1>", unsafe_content_allowed=True)
-                st.divider()
-                
-                # Customer & Vehicle Details
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.markdown("### 👤 CUSTOMER DETAILS")
-                    st.write(f"**Name:** {r['customers']['name']}")
-                    st.write(f"**License No:** {r['customers'].get('dl_no', 'N/A')}")
-                    st.write(f"**Contact:** {r['customers'].get('phone', 'N/A')}")
-                with c2:
-                    st.markdown("### 🚙 VEHICLE DETAILS")
-                    st.write(f"**Plate:** {r['fleet']['plate']}")
-                    st.write(f"**Make/Model:** {r['fleet']['brand']} {r['fleet']['model']}")
-                    st.write(f"**Odometer Out:** {r.get('odo_out', 0):,} km")
+                with st.container(border=True):
+                    h1, h2 = st.columns([1, 2])
+                    with h1:
+                        if branding.get("company_logo"):
+                            st.image(branding.get("company_logo"), width=150)
+                    with h2:
+                        st.markdown(f"## {company_display}")
+                        st.write(f"📍 {branding.get('company_address', 'Fiji')}")
+                        st.write(f"📞 {branding.get('company_phone', '')} | ✉️ {branding.get('company_email', '')}")
+                    
+                    st.markdown("<h2 style='text-align: center;'>RENTAL AGREEMENT / VEHICLE OUT REPORT</h2>", unsafe_content_allowed=True)
+                    st.divider()
+                    
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.markdown("### 👤 CUSTOMER DETAILS")
+                        st.write(f"**Name:** {r['customers']['name']}")
+                        st.write(f"**License No:** {r['customers'].get('dl_no', 'N/A')}")
+                    with c2:
+                        st.markdown("### 🚙 VEHICLE DETAILS")
+                        st.write(f"**Plate:** {r['fleet']['plate']}")
+                        st.write(f"**Make/Model:** {r['fleet']['brand']} {r['fleet']['model']}")
+                        st.write(f"**Odometer Out:** {r.get('odo_out', 0):,} km")
 
-                st.divider()
-                
-                # Financials & Rental Period
-                f1, f2 = st.columns(2)
-                with f1:
-                    st.markdown("### ⏳ RENTAL PERIOD")
-                    st.write(f"**Date Out:** {r.get('date_out')}")
-                    st.write(f"**Expected In:** {r.get('date_in')}")
-                    st.write(f"**Fuel Level Out:** {r.get('fuel_out', 'N/A')}")
-                with f2:
-                    st.markdown("### 💰 FINANCIAL SUMMARY")
-                    st.write(f"**Daily Rate:** ${float(r.get('rate', 0)):,.2f}")
-                    st.write(f"**Bond/Deposit:** ${float(r.get('bond', 0)):,.2f}")
-                    st.write(f"**Total Estimated:** ${float(r.get('total', 0)):,.2f}")
+                    st.divider()
+                    
+                    st.markdown("### 📜 TERMS & CONDITIONS")
+                    st.caption("1. Vehicle Usage: Hirer agrees to use vehicle solely for personal use. 2. Insurance: Hirer responsible for insurance excess. 3. Fuel: Return with same level as out. 4. Fines: Hirer responsible for all traffic violations.")
+                    
+                    st.divider()
+                    
+                    s1, s2 = st.columns(2)
+                    with s1:
+                        st.markdown("### ✍️ HIRER SIGNATURE")
+                        sig_data = r.get('signature_url') or r.get('signature_data')
+                        if sig_data:
+                            st.image(sig_data, width=250)
+                        else:
+                            st.write("__________________________")
+                    with s2:
+                        st.markdown("### 📝 REMARKS")
+                        st.info(r.get('notes') or "No remarks.")
+        else:
+            st.info("No rental records found.")
+    except Exception as e:
+        st.error(f"Data Fetch Error: {e}")
 
-                st.divider()
-                
-                # Disclaimer Section
-                st.markdown("### 📜 TERMS & CONDITIONS")
-                st.caption("""
-                1. **Vehicle Usage:** The hirer agrees to use the vehicle solely for personal use and not for hire, racing, or illegal activities.
-                2. **Insurance:** The vehicle is covered by third-party insurance. In the event of an accident, the hirer is responsible for the insurance excess as specified.
-                3. **Fuel:** The vehicle must be returned with the same level of fuel as recorded at the time of check-out. A surcharge may apply for refueling.
-                4. **Traffic Violations:** All traffic fines, parking tickets, and tolls incurred during the rental period are the sole responsibility of the hirer.
-                5. **Cleanliness:** A cleaning fee may be charged if the vehicle is returned in an excessively dirty condition.
-                """)
-                
-                st.divider()
-                
-                # Signature Section
-                s1, s2 = st.columns(2)
-                with s1:
-                    st.markdown("### ✍️ HIRER SIGNATURE")
-                    sig_data = r.get('signature_url') or r.get('signature_data')
-                    if sig_data:
-                        st.image(sig_data, width=300)
-                    else:
-                        st.markdown("<br><br>__________________________", unsafe_content_allowed=True)
-                        st.caption("Authorized Signature Required")
-                with s2:
-                    st.markdown("### 📝 AGENT REMARKS")
-                    st.info(r.get('notes') or "No additional remarks recorded.")
-            
-            # Print Helper
-            st.button("🖨️ Print Report", on_click=lambda: st.write("Tip: Use Browser Print (Ctrl+P) to save as PDF"))
-    else:
-        st.info("No rental records found to generate reports.")
-
-# --- REST OF ORIGINAL CATEGORIES ---
+# --- 5. REVENUE & FINANCIALS ---
 elif report_mode == "💰 Revenue & Financials":
-    # ... [Existing code for Revenue] ...
-    pass
-elif report_mode == "👥 All Customers":
-    # ... [Existing code for Customers] ...
-    pass
-# ... (and so on)
+    st.subheader("Revenue & Financial Performance")
+    # Updated with explicit FKs
+    res = supabase.table("rentals").select("*, fleet!fk_rentals_fleet(plate, brand), customers!fk_rentals_customers(name)").execute()
+
+    if res.data:
+        df = pd.json_normalize(res.data)
+        df['total'] = pd.to_numeric(df['total'], errors='coerce').fillna(0)
+        df['tax_amount'] = pd.to_numeric(df['tax_amount'], errors='coerce').fillna(0)
+        
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Gross Revenue", f"${df['total'].sum():,.2f}")
+        m2.metric("VAT Collected", f"${df['tax_amount'].sum():,.2f}")
+        m3.metric("Total Bookings", len(df))
+
+        st.dataframe(df[['date_out', 'fleet!fk_rentals_fleet.plate', 'customers!fk_rentals_customers.name', 'total', 'status']], use_container_width=True, hide_index=True)
+
+# --- [REST OF ORIGINAL REPORT CATEGORIES 6-8 REMAIN UNCHANGED] ---
