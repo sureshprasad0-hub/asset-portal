@@ -14,10 +14,18 @@ supabase: Client = create_client(url, key)
 st.title("📜 Rental History")
 st.caption("Completed and past rental records.")
 
-# Fetch Company Name for the Header
+# Fetch Company Name
 c_res_settings = supabase.table("settings").select("config_value").eq("config_key", "company_name").execute()
 company_display = c_res_settings.data[0]['config_value'] if c_res_settings.data else "YOUR RENTAL & TOURS"
 st.caption(f"📍 {company_display}")
+
+# Helper to convert "1/8" strings to percentage for the progress bar
+def fuel_to_percent(fuel_str):
+    mapping = {
+        "Empty": 0.0, "1/8": 0.125, "1/4": 0.25, "3/8": 0.375, 
+        "1/2": 0.5, "5/8": 0.625, "3/4": 0.75, "7/8": 0.875, "Full": 1.0
+    }
+    return mapping.get(fuel_str, 0.0)
 
 # --- 2. SEARCH & FILTERS ---
 search = st.text_input("🔍 Search by Number Plate or Customer Name", placeholder="e.g. JL 101").strip().lower()
@@ -51,26 +59,63 @@ try:
                     c2.caption(f"Checked in: {h.get('return_date_actual', 'N/A')}")
                     
                     c3.write(f"💵 **${float(h.get('total') or 0):,.2f}**")
-                    c3.caption(f"Status: {h['status']}")
                     
-                    # --- IMPROVED DETAILED VIEW ---
+                    # --- DETAILED GRAPHICAL VIEW ---
                     if c4.button("View", key=f"hist_{h['id']}"):
-                        with st.expander("📄 Full Rental Details", expanded=True):
+                        with st.expander("📄 Complete Rental Record", expanded=True):
+                            # Section 1: Vehicle & Customer
                             v1, v2 = st.columns(2)
                             with v1:
-                                st.markdown(f"**Vehicle:** {fleet_info.get('brand')} {fleet_info.get('model')} ({fleet_info.get('plate')})")
-                                st.markdown(f"**Customer:** {cust_info.get('name')}")
-                                st.markdown(f"**Period:** {h.get('date_out')} to {h.get('return_date_actual')}")
-                                st.markdown(f"**Odometer:** {h.get('odo_out')} → {h.get('odo_in')} km")
+                                st.markdown("### 🚙 Vehicle Details")
+                                st.write(f"**Plate:** {fleet_info.get('plate')}")
+                                st.write(f"**Model:** {fleet_info.get('brand')} {fleet_info.get('model')}")
+                                st.write(f"**Odo Out:** {h.get('odo_out'):,} km")
+                                st.write(f"**Odo In:** {h.get('odo_in'):,} km")
                             with v2:
-                                st.markdown(f"**Daily Rate:** ${h.get('rate')}")
-                                st.markdown(f"**Subtotal:** ${h.get('subtotal')}")
-                                st.markdown(f"**VAT:** ${h.get('tax_amount')}")
-                                st.markdown(f"**Grand Total:** ${h.get('total')}")
-                            
+                                st.markdown("### 👤 Customer Details")
+                                st.write(f"**Name:** {cust_info.get('name')}")
+                                st.write(f"**Out:** {h.get('date_out')}")
+                                st.write(f"**In:** {h.get('return_date_actual')}")
+                                st.write(f"**Bond:** ${h.get('bond') or 0}")
+
                             st.divider()
-                            st.markdown(f"**Fuel Out/In:** {h.get('fuel_out')} / {h.get('fuel_in')}")
-                            st.info(f"**Notes:** {h.get('notes') or 'No notes provided.'}")
+
+                            # Section 2: Fuel Graphical Display
+                            st.markdown("### ⛽ Fuel Status")
+                            f1, f2 = st.columns(2)
+                            with f1:
+                                st.write(f"**Fuel Out: {h.get('fuel_out')}**")
+                                st.progress(fuel_to_percent(h.get('fuel_out')), text=None)
+                            with f2:
+                                st.write(f"**Fuel In: {h.get('fuel_in')}**")
+                                st.progress(fuel_to_percent(h.get('fuel_in')), text=None)
+
+                            st.divider()
+
+                            # Section 3: Financials
+                            st.markdown("### 💰 Financial Summary")
+                            m1, m2, m3, m4 = st.columns(4)
+                            m1.metric("Daily Rate", f"${h.get('rate')}")
+                            m2.metric("Subtotal", f"${h.get('subtotal')}")
+                            m3.metric("VAT", f"${h.get('tax_amount')}")
+                            m4.metric("Total Paid", f"${h.get('total')}")
+
+                            st.divider()
+
+                            # Section 4: Signature & Notes
+                            s1, s2 = st.columns(2)
+                            with s1:
+                                st.markdown("### 🖋️ Customer Signature")
+                                # This assumes signature is stored as a URL or base64. 
+                                # If you haven't implemented storage yet, it shows a placeholder.
+                                sig_data = h.get('signature_url') or h.get('signature_data')
+                                if sig_data:
+                                    st.image(sig_data, width=300)
+                                else:
+                                    st.warning("No digital signature captured for this record.")
+                            with s2:
+                                st.markdown("### 📝 Remarks")
+                                st.info(h.get('notes') or "No notes provided.")
         else:
             st.info("No matching records found.")
     else:
