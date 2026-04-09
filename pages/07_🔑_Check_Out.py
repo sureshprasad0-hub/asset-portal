@@ -77,7 +77,7 @@ signature_canvas = st_canvas(
 # --- 6. SUBMISSION ---
 if st.button("Finalize & Save Agreement", type="primary", use_container_width=True):
     if not v_choice or not c_choice or total_hours <= 0:
-        st.error("Please complete all selections and ensure the return time is valid.")
+        st.error("Please complete all selections.")
     else:
         try:
             vid = next(v['id'] for v in v_res.data if v['plate'] == v_choice)
@@ -106,12 +106,16 @@ st.subheader("📋 Currently Out (Active)")
 @st.dialog("Edit Active Rental")
 def edit_rental(rental):
     st.write(f"Editing Agreement for **{rental['fleet']['plate']}**")
-    new_rate = st.number_input("Update Daily Rate", value=float(rental['rate']))
-    new_bond = st.number_input("Update Bond", value=float(rental['bond']))
-    new_return = st.datetime_input("Update Expected Return", value=datetime.fromisoformat(rental['date_in']))
+    
+    # FIXED: Added fallback for None values using 'or 0' or 'or 0.0'
+    new_rate = st.number_input("Update Daily Rate", value=float(rental.get('rate') or 0.0))
+    new_bond = st.number_input("Update Bond", value=float(rental.get('bond') or 0.0))
+    
+    # Safety check for dates
+    current_return = datetime.fromisoformat(rental['date_in']) if rental.get('date_in') else datetime.now()
+    new_return = st.datetime_input("Update Expected Return", value=current_return)
     
     if st.button("Save Changes"):
-        # Recalculate totals for the update
         d_out = datetime.fromisoformat(rental['date_out'])
         new_duration = new_return - d_out
         new_hours = max(0.0, new_duration.total_seconds() / 3600)
@@ -128,6 +132,7 @@ def edit_rental(rental):
         st.rerun()
 
 try:
+    # Ensure all required fields for the edit dialog are fetched here
     rent_res = supabase.table("rentals") \
         .select("id, total, bond, rate, date_out, date_in, odo_out, fuel_out, fleet!fk_rentals_fleet(plate), customers!fk_rentals_customers(name)") \
         .eq("status", "Active").execute()
@@ -138,12 +143,12 @@ try:
                 r1, r2, r3, r4 = st.columns([2, 3, 2, 1])
                 r1.write(f"🚗 **{r['fleet']['plate']}**")
                 r2.write(f"👤 {r['customers']['name']}")
-                r3.write(f"💰 **${float(r['total']):,.2f}**")
+                r3.write(f"💰 **${float(r['total'] or 0):,.2f}**")
                 
                 if r4.button("Edit", key=f"edit_{r['id']}"):
                     edit_rental(r)
                 
-                st.caption(f"Bond: ${r['bond']} | Out: {r['date_out']} | Fuel: {r['fuel_out']}")
+                st.caption(f"Bond: ${r.get('bond') or 0} | Out: {r['date_out']}")
     else:
         st.info("No active rentals.")
 except Exception as e:
