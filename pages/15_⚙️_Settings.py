@@ -26,19 +26,32 @@ with st.expander("🏢 Company Branding", expanded=True):
         st.success(f"Company name updated to: {new_name}")
         st.rerun()
 
-# --- 4. VAT CONFIGURATION ---
+# --- 4. VAT & FINANCIAL CONFIGURATION ---
 with st.expander("💰 VAT & Financials", expanded=False):
-    res = supabase.table("settings").select("config_value").eq("config_key", "vat_rate").execute()
-    current_vat = float(res.data[0]['config_value']) if res.data else 15.0
+    # --- VAT Section ---
+    res_vat = supabase.table("settings").select("config_value").eq("config_key", "vat_rate").execute()
+    current_vat = float(res_vat.data[0]['config_value']) if res_vat.data else 15.0
     new_vat = st.number_input("Global Fiji VAT Rate (%)", value=current_vat, step=0.5)
 
     if st.button("Update VAT Rate"):
         supabase.table("settings").upsert({"config_key": "vat_rate", "config_value": str(new_vat)}).execute()
         st.success(f"VAT updated to {new_vat}%")
 
-# --- 5. STAFF ACCOUNT MANAGEMENT (UPDATED) ---
+    st.divider()
+
+    # --- Fuel Surcharge Section ---
+    res_fuel = supabase.table("settings").select("config_value").eq("config_key", "fuel_surcharge").execute()
+    current_fuel = float(res_fuel.data[0]['config_value']) if res_fuel.data else 0.00
+    
+    # Dollars and cents format using %.2f
+    new_fuel = st.number_input("Fuel Surcharge per Litre ($)", value=current_fuel, min_value=0.00, step=0.01, format="%.2f")
+
+    if st.button("Update Fuel Surcharge"):
+        supabase.table("settings").upsert({"config_key": "fuel_surcharge", "config_value": str(new_fuel)}).execute()
+        st.success(f"Fuel surcharge updated to ${new_fuel:.2f} per litre")
+
+# --- 5. STAFF ACCOUNT MANAGEMENT ---
 with st.expander("👥 Staff Account Management", expanded=False):
-    # Fetch current users
     u_res = supabase.table("portal_users").select("*").order("username").execute()
     user_list = u_res.data if u_res.data else []
     usernames = [u['username'] for u in user_list]
@@ -71,10 +84,8 @@ with st.expander("👥 Staff Account Management", expanded=False):
         st.subheader("Modify / Delete Staff")
         if usernames:
             selected_u = st.selectbox("Select Account", options=usernames)
-            # Find the data for the selected user
             user_data = next(u for u in user_list if u['username'] == selected_u)
             
-            # Change Role
             current_role_idx = ["Staff", "Manager", "Admin"].index(user_data['role'])
             new_role = st.selectbox("Update Role", ["Staff", "Manager", "Admin"], index=current_role_idx)
             
@@ -84,7 +95,6 @@ with st.expander("👥 Staff Account Management", expanded=False):
                 st.rerun()
 
             st.divider()
-            # Delete account (with safety check)
             if st.button(f"🗑️ Delete {selected_u}", type="secondary"):
                 if selected_u == st.session_state.get('username'):
                     st.error("You cannot delete your own account.")
