@@ -13,14 +13,11 @@ supabase: Client = create_client(url, key)
 
 st.title("🔑 New Rental Agreement")
 
-# Fetch Company Name for the Header
-c_res_settings = supabase.table("settings").select("config_value").eq("config_key", "company_name").execute()
-company_display = c_res_settings.data[0]['config_value'] if c_res_settings.data else "YOUR RENTAL & TOURS"
-st.caption(f"📍 {company_display}")
-
 # --- 2. DATA FETCHING ---
 v_res = supabase.table("fleet").select("id, plate, odometer, model").eq("status", "Available").execute()
 c_res = supabase.table("customers").select("id, name").order("name").execute()
+
+# Fetch VAT Rate (Default to 15% for Fiji if not found)
 vat_setting = supabase.table("settings").select("config_value").eq("config_key", "vat_rate").execute()
 vat_pct = float(vat_setting.data[0]['config_value']) if vat_setting.data else 15.0
 
@@ -31,15 +28,22 @@ with col_a:
     v_choice = st.selectbox("Select Vehicle", options=[v['plate'] for v in v_res.data], index=None)
     c_choice = st.selectbox("Select Customer", options=[c['name'] for c in c_res.data], index=None)
     
-    current_odo = 0
+    # ODOMETER FIELD: Manual entry allowed, but defaults to current database value
+    db_odo = 0
     if v_choice:
         v_data = next((v for v in v_res.data if v['plate'] == v_choice), None)
-        current_odo = v_data['odometer'] if v_data else 0
-        st.info(f"📟 **Current Odometer:** `{current_odo:,} km`")
+        db_odo = v_data['odometer'] if v_data else 0
+    
+    current_odo = st.number_input("Odometer Reading (km)", value=db_odo, help="Verify against physical dashboard.")
 
 with col_b:
     daily_rate = st.number_input("Daily Rate ($)", min_value=0.0, value=85.0, step=5.0)
-    fuel_out = st.select_slider("Fuel Level Out", options=["Empty", "1/4", "1/2", "3/4", "Full"], value="Full")
+    
+    # FUEL LEVEL: 1/8 Increments
+    fuel_options = ["Empty", "1/8", "1/4", "3/8", "1/2", "5/8", "3/4", "7/8", "Full"]
+    fuel_out = st.select_slider("Fuel Level Out", options=fuel_options, value="Full")
+    
+    bond_amount = st.number_input("Bond Deposit ($)", min_value=0.0, value=500.0, step=50.0)
 
 st.divider()
 
@@ -49,35 +53,54 @@ with col1:
 with col2:
     time_in_target = st.datetime_input("Expected Return", value=datetime.now() + timedelta(days=1), step=timedelta(minutes=15))
 
-# --- 4. REAL-TIME CALCULATION ---
+# --- 4. CALCULATION (VAT INCLUSIVE LOGIC) ---
 duration = time_in_target - time_out
 total_hours = max(0.0, duration.total_seconds() / 3600)
-subtotal = (total_hours / 24) * daily_rate
-tax_total = subtotal * (vat_pct / 100)
-grand_total = subtotal + tax_total
 
+# 1. Calculate Gross Total based on hourly pro-rata
+gross_total = (total_hours / 24) * daily_rate
+
+# 2. Extract VAT from the Inclusive Price (Reverse VAT Calculation)
+# Formula: Total / (1 + (VAT / 100))
+subtotal = gross_total / (1 + (vat_pct / 100))
+tax_amount = gross_total - subtotal
+
+# 3. Final Total Payable (Rental + Bond)
+total_payable = gross_total + bond_amount
+
+# Live Quote Summary
 with st.container(border=True):
-    st.write("### 📊 Live Quote Summary")
+    st.write("### 📊 Live Quote (VAT Inclusive)")
     q1, q2, q3 = st.columns(3)
-    q1.metric("Duration", f"{total_hours:.2f} Hrs")
-    q2.metric("Subtotal", f"${subtotal:,.2f}")
-    q3.metric("Grand Total", f"${grand_total:,.2f}")
+    q1.metric("Rental Subtotal", f"${subtotal:,.2f}")
+    q2.metric(f"VAT ({vat_pct}%)", f"${tax_amount:,.2f}")
+    q3.metric("Rental Total", f"${gross_total:,.2f}")
+    
+    st.write(f"**Security Bond:** ${bond_amount:,.2f}")
+    st.subheader(f"Total Due Now: ${total_payable:,.2f}")
 
 # --- 5. SUBMISSION ---
-if st.button("Finalize & Save Rental Agreement", type="primary", use_container_width=True):
+if st.button("Finalize & Save Agreement", type="primary", use_container_width=True):
     if not v_choice or not c_choice or total_hours <= 0:
-        st.error("Please check vehicle selection and valid return time.")
+        st.error("Please complete all selections and ensure the return time is valid.")
     else:
         try:
             vid = next(v['id'] for v in v_res.data if v['plate'] == v_choice)
             cid = next(c['id'] for c in c_res.data if c['name'] == c_choice)
             
             payload = {
-                "vehicle_id": vid, "customer_id": cid, "rate": daily_rate,
-                "subtotal": round(subtotal, 2), "tax_amount": round(tax_total, 2),
-                "total": round(grand_total, 2), "fuel_out": fuel_out,
-                "odo_out": current_odo, "date_out": time_out.isoformat(), 
-                "date_in": time_in_target.isoformat(), "status": "Active"
+                "vehicle_id": vid, 
+                "customer_id": cid, 
+                "rate": daily_rate,
+                "bond": bond_amount,
+                "subtotal": round(subtotal, 2), 
+                "tax_amount": round(tax_amount, 2),
+                "total": round(gross_total, 2), 
+                "fuel_out": fuel_out,
+                "odo_out": current_odo, 
+                "date_out": time_out.isoformat(), 
+                "date_in": time_in_target.isoformat(), 
+                "status": "Active"
             }
             
             supabase.table("rentals").insert(payload).execute()
@@ -87,14 +110,14 @@ if st.button("Finalize & Save Rental Agreement", type="primary", use_container_w
         except Exception as e:
             st.error(f"Error: {e}")
 
-# --- 6. CURRENTLY ACTIVE REGISTRY ---
+# --- 6. ACTIVE REGISTRY ---
 st.write("---")
 st.subheader("📋 Currently Out (Active)")
 
 try:
-    # We add !fk_rentals_fleet to tell Supabase exactly which relationship to use
+    # Use the explicit relationship names fixed earlier
     rent_res = supabase.table("rentals") \
-        .select("id, total, date_out, odo_out, fleet!fk_rentals_fleet(plate, model), customers!fk_rentals_customers(name)") \
+        .select("id, total, bond, date_out, odo_out, fleet!fk_rentals_fleet(plate), customers!fk_rentals_customers(name)") \
         .eq("status", "Active") \
         .execute()
 
@@ -102,29 +125,11 @@ try:
         for r in rent_res.data:
             with st.container(border=True):
                 r1, r2, r3 = st.columns([3, 3, 2])
-                
-                # Extracting data safely using the explicit relationship key
-                fleet_info = r.get('fleet', {})
-                cust_info = r.get('customers', {})
-                
-                plate = fleet_info.get('plate', 'Unknown')
-                model = fleet_info.get('model', '')
-                cust_name = cust_info.get('name', 'Unknown')
-                
-                r1.write(f"🚗 **{plate}**")
-                r1.caption(f"{model}")
-                
-                r2.write(f"👤 {cust_name}")
-                
+                r1.write(f"🚗 **{r['fleet']['plate']}**")
+                r2.write(f"👤 {r['customers']['name']}")
                 r3.write(f"💰 **${float(r['total']):,.2f}**")
-                
-                # Formatting the date for Fiji standard
-                d_out = datetime.fromisoformat(r['date_out']).strftime("%d %b, %I:%M %p")
-                st.caption(f"Departure: {d_out} | Odo Out: {r['odo_out']:,} km")
+                st.caption(f"Bond: ${r['bond']} | Out since: {r['date_out']}")
     else:
-        st.info("No vehicles are currently out.")
-
-except Exception as e:
-    st.error("Relationship Ambiguity Error")
-    st.info("Try updating the join syntax in your code as shown above.")
-    st.expander("Show Technical Error").code(str(e))
+        st.info("No active rentals.")
+except:
+    st.warning("Active list view limited. Check database for details.")
