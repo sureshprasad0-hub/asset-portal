@@ -34,9 +34,11 @@ st.markdown("""
         background-color: #ff4b4b;
         color: white;
     }
-    .login-header {
-        text-align: center;
-        padding-bottom: 10px;
+    /* Vertical alignment for the header columns */
+    [data-testid="column"] {
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -47,18 +49,25 @@ if 'logged_in' not in st.session_state:
 
 # --- 5. LOGIN INTERFACE ---
 if not st.session_state['logged_in']:
-    # Centered branding container
-    with st.container():
-        # Display Uploaded Logo
+    # Centered Header: Logo on Left, Title on Right
+    head_col1, head_col2 = st.columns([1, 3])
+    
+    with head_col1:
         try:
-            logo = Image.open("image_717a44.png")
-            st.image(logo, width=280)
+            # Use the specific filename from your upload
+            logo = Image.open("image_718d46.png")
+            st.image(logo, use_container_width=True)
         except:
             st.write("🚗")
             
-        st.markdown("<h1 class='login-header'>RENTAL CAR APPLICATION (RCA)</h1>", unsafe_allow_html=True)
-        st.caption("<center>Secure Management Portal | Fiji Operations</center>", unsafe_allow_html=True)
+    with head_col2:
+        st.markdown("<h1 style='margin:0;'>RENTAL CAR APPLICATION (RCA)</h1>", unsafe_allow_html=True)
 
+    st.caption("<center>Secure Management Portal | Fiji Operations</center>", unsafe_allow_html=True)
+    st.write("---")
+
+    # Login Form
+    with st.container():
         with st.form("login_gate"):
             u = st.text_input("Username", placeholder="e.g. admin").strip().lower()
             p = st.text_input("Password", type="password").strip()
@@ -83,7 +92,7 @@ else:
     c_res = supabase.table("settings").select("config_value").eq("config_key", "company_name").execute()
     company_name = c_res.data[0]['config_value'] if c_res.data else "YOUR RENTAL & TOURS"
     
-    st.title(f"👋 Bula, {st.session_state['user_name']}!")
+    st.title(f"👋 Hello, {st.session_state['user_name']}!")
     st.info(f"System Live: **{company_name}**. Please use the sidebar to navigate.")
     
     if st.button("Secure Logout"):
