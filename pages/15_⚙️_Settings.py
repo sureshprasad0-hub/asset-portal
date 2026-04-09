@@ -17,7 +17,6 @@ st.caption(f"📍 {company_display}")
 
 # --- 3. COMPANY CONFIGURATION ---
 with st.expander("🏢 Company Branding", expanded=True):
-    # Fetch all branding settings at once
     set_res = supabase.table("settings").select("*").in_("config_key", ["company_name", "company_address", "company_phone", "company_email", "company_logo"]).execute()
     settings_dict = {item['config_key']: item['config_value'] for item in set_res.data}
     
@@ -27,7 +26,6 @@ with st.expander("🏢 Company Branding", expanded=True):
         new_name = st.text_input("Organisation Name", value=settings_dict.get("company_name", "YOUR RENTAL & TOURS")).strip().upper()
         new_address = st.text_input("Physical Address", value=settings_dict.get("company_address", "Suva, Fiji")).strip()
         
-        # LOGO UPLOADER
         st.write("**Company Logo**")
         uploaded_logo = st.file_uploader("Upload Logo (PNG/JPG)", type=['png', 'jpg', 'jpeg'])
         current_logo = settings_dict.get("company_logo")
@@ -45,8 +43,6 @@ with st.expander("🏢 Company Branding", expanded=True):
             {"config_key": "company_email", "config_value": new_email},
             {"config_key": "company_phone", "config_value": new_phone}
         ]
-        
-        # Handle Logo conversion to Base64 for easy storage in Settings table
         if uploaded_logo:
             encoded_logo = base64.b64encode(uploaded_logo.read()).decode()
             logo_data_url = f"data:image/png;base64,{encoded_logo}"
@@ -171,3 +167,25 @@ with st.expander("📍 Branch Location Setup", expanded=False):
                 supabase.table("operating_locations").delete().eq("location_name", remove_loc).execute()
                 st.warning(f"Removed {remove_loc}")
                 st.rerun()
+
+# --- 8. TERMS & CONDITIONS MANAGEMENT ---
+with st.expander("📜 Rental Terms & Conditions", expanded=False):
+    # Fetch current Terms from DB
+    res_terms = supabase.table("settings").select("config_value").eq("config_key", "rental_terms").execute()
+    current_terms = res_terms.data[0]['config_value'] if res_terms.data else ""
+    
+    st.subheader("Contract Disclaimer Text")
+    st.info("Enter the terms and conditions that will appear on the Rental Out Report. Use line breaks for separate points.")
+    
+    # Input area with 10 lines height
+    new_terms = st.text_area(
+        "Standard Terms & Conditions", 
+        value=current_terms, 
+        height=250, # Approximate height for 10 lines
+        help="These clauses will be displayed in the legal section of your PDF/Printable reports."
+    )
+
+    if st.button("Save Terms & Conditions"):
+        supabase.table("settings").upsert({"config_key": "rental_terms", "config_value": new_terms}).execute()
+        st.success("Terms & Conditions updated successfully.")
+        st.rerun()
