@@ -15,8 +15,8 @@ st.title("📜 Rental History")
 st.caption("Completed and past rental records.")
 
 # Fetch Company Name for the Header
-c_res = supabase.table("settings").select("config_value").eq("config_key", "company_name").execute()
-company_display = c_res.data[0]['config_value'] if c_res.data else "YOUR RENTAL & TOURS"
+c_res_settings = supabase.table("settings").select("config_value").eq("config_key", "company_name").execute()
+company_display = c_res_settings.data[0]['config_value'] if c_res_settings.data else "YOUR RENTAL & TOURS"
 st.caption(f"📍 {company_display}")
 
 # --- 2. SEARCH & FILTERS ---
@@ -24,8 +24,9 @@ search = st.text_input("🔍 Search by Number Plate or Customer Name", placehold
 
 # --- 3. FETCH COMPLETED RECORDS ---
 try:
+    # FIXED: Added explicit relationship tags !fk_rentals_fleet and !fk_rentals_customers
     hist_res = supabase.table("rentals") \
-        .select("*, fleet(plate, model, brand), customers(name)") \
+        .select("*, fleet!fk_rentals_fleet(plate, model, brand), customers!fk_rentals_customers(name)") \
         .eq("status", "Completed") \
         .order("created_at", desc=True) \
         .execute()
@@ -42,13 +43,17 @@ try:
                 with st.container(border=True):
                     c1, c2, c3, c4 = st.columns([2, 3, 2, 1])
                     
-                    c1.write(f"🏁 **{h['fleet']['plate']}**")
-                    c1.caption(f"{h['fleet']['brand']} {h['fleet']['model']}")
+                    # Accessing nested data through the specific relationship keys
+                    fleet_info = h.get('fleet', {})
+                    cust_info = h.get('customers', {})
                     
-                    c2.write(f"👤 **{h['customers']['name']}**")
+                    c1.write(f"🚗 **{fleet_info.get('plate', 'N/A')}**")
+                    c1.caption(f"{fleet_info.get('brand', '')} {fleet_info.get('model', '')}")
+                    
+                    c2.write(f"👤 **{cust_info.get('name', 'N/A')}**")
                     c2.caption(f"Check-in: {h.get('date_returned', 'N/A')}")
                     
-                    c3.write(f"💵 **${float(h['total']):,.2f}**")
+                    c3.write(f"💵 **${float(h.get('total') or 0):,.2f}**")
                     c3.caption(f"Status: {h['status']}")
                     
                     # Detailed View
@@ -60,4 +65,7 @@ try:
         st.info("No completed rentals in the database.")
         
 except Exception as e:
-    st.error(f"Could not load history. Ensure SQL foreign keys are set. Error: {e}")
+    # This will now display the specific error if the join still fails
+    st.error("Could not load history.")
+    with st.expander("Show Error Details"):
+        st.code(str(e))
