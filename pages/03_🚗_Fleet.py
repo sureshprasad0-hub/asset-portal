@@ -49,21 +49,22 @@ if st.session_state.fleet_view in ["add", "edit"]:
     
     st.subheader("🛠️ Asset Details" if mode == "edit" else "➕ Register New Asset")
     
-    # Start the form block
     with st.form("vehicle_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
             plate = st.text_input("Number Plate", value=v.get('plate', "")).strip().upper()
             
-            # Safety: Ensure the saved brand exists in options, else default to index 0
-            b_val = v.get('brand', "")
+            # Brand Index Safety
+            b_val = v.get('brand', "Other")
             b_idx = brand_options.index(b_val) if b_val in brand_options else 0
             brand = st.selectbox("Brand", options=brand_options, index=b_idx)
             
             model = st.text_input("Model", value=v.get('model', ""))
             
-            # Odometer tracking integration
-            odometer = st.number_input("Odometer Reading (km)", value=int(v.get('odometer', 0)), min_value=0)
+            # ODOMETER: Default to 0 if blank to prevent crash
+            odo_raw = v.get('odometer')
+            current_odo = int(odo_raw) if odo_raw is not None else 0
+            odometer = st.number_input("Odometer Reading (km)", value=current_odo, min_value=0)
             
         with col2:
             v_types = ["Sedan", "SUV", "4WD", "Van", "Truck"]
@@ -71,7 +72,7 @@ if st.session_state.fleet_view in ["add", "edit"]:
             vt_idx = v_types.index(vt_val) if vt_val in v_types else 0
             v_type = st.selectbox("Vehicle Type", v_types, index=vt_idx)
             
-            l_val = v.get('location', "")
+            l_val = v.get('location', "Main Yard")
             l_idx = loc_options.index(l_val) if l_val in loc_options else 0
             location = st.selectbox("Current Location", options=loc_options, index=l_idx)
             
@@ -80,12 +81,13 @@ if st.session_state.fleet_view in ["add", "edit"]:
             s_idx = status_list.index(s_val) if s_val in status_list else 0
             status = st.selectbox("Status", status_list, index=s_idx, disabled=(s_val == "Rented"))
             
-            color = st.color_picker("Display Color", value=v.get('color', "#ff4b4b"))
+            # COLOR: Default to red if blank
+            saved_color = v.get('color', "#ff4b4b")
+            color = st.color_picker("Display Color", value=saved_color)
 
-        # The Submit Button MUST be inside the form block
+        # SUBMIT BUTTON: Must be inside form
         submitted = st.form_submit_button("Save Asset Details", use_container_width=True, type="primary")
         
-    # Process outside the form context
     if submitted:
         if not plate:
             st.error("Number Plate is required.")
@@ -104,15 +106,15 @@ if st.session_state.fleet_view in ["add", "edit"]:
             try:
                 if mode == "add":
                     supabase.table("fleet").insert(payload).execute()
-                    st.success("Asset added to registry.")
+                    st.success("Asset added successfully.")
                 else:
                     supabase.table("fleet").update(payload).eq("id", v['id']).execute()
-                    st.success("Asset details updated successfully.")
+                    st.success("Asset updated successfully.")
                 
                 st.session_state.fleet_view = "list"
                 st.rerun()
             except Exception as e:
-                st.error(f"Error saving asset: {e}")
+                st.error(f"Database Error: {e}")
 
     if st.button("⬅️ Back to List"):
         st.session_state.fleet_view = "list"
@@ -126,7 +128,6 @@ else:
     with col_search:
         search = st.text_input("🔍 Search Plate or Model", placeholder="e.g. JL 101").strip()
 
-    # Fetch fresh fleet data
     f_res = supabase.table("fleet").select("*").order("plate").execute()
     
     if f_res.data:
@@ -153,22 +154,19 @@ else:
                 status = row['status']
                 icon = "🟢" if status == "Available" else "🔴" if status == "Rented" else "🟡"
                 
-                # Column 1: Plate and Odometer
                 r1.write(f"{icon} **{s_plate}**")
                 r1.caption(f"📟 {row.get('odometer', 0):,} km")
                 
-                # Column 2: Location and Status
                 r2.write(f"{row['location']}")
                 r2.caption(f"Status: {status}")
                 
-                # Column 3: Brand, Model, and Type
+                # Show brand, model, and the selected color badge
                 r3.write(f"{row['brand']}")
-                r3.caption(f"{s_model} | {row.get('type', 'N/A')}")
+                r3.caption(f"{s_model} | {row.get('color', 'N/A')}")
                 
-                # Column 4: Edit Button
                 if r4.button("Edit", key=f"v_ed_{row['id']}", use_container_width=True):
                     st.session_state.selected_vehicle = row
                     st.session_state.fleet_view = "edit"
                     st.rerun()
     else:
-        st.info("No vehicles currently in the database.")
+        st.info("No vehicles found.")
