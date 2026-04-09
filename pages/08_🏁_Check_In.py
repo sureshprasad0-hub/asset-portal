@@ -7,7 +7,7 @@ if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
     st.warning("Please log in on the Home page first.")
     st.stop()
 
-# --- 2. DATABASE & STORAGE CONNECTION ---
+# --- 2. DATABASE CONNECTION ---
 @st.cache_resource
 def init_connection():
     return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
@@ -23,119 +23,92 @@ company_display = c_res_settings.data[0]['config_value'] if c_res_settings.data 
 st.caption(f"📍 {company_display}")
 
 # --- 3. FETCH DATA ---
-# Updated to include odo_out from the rentals table
+# We fetch Active rentals and join the fleet table to see the departure odometer
 r_res = supabase.table("rentals").select(
-    "id, vehicle_id, fuel_out, odo_out, fleet(plate, brand, model), customers(name)"
+    "id, vehicle_id, fuel_out, odo_out, fleet(plate, brand, model, odometer), customers(name)"
 ).eq("status", "Active").execute()
-
-# Completed Rentals for the Registry below
-history_res = supabase.table("rentals").select(
-    "id, total, date_out, return_date_actual, fuel_out, fuel_in, notes, photo_proof_url, fleet(plate, model), customers(name)"
-).eq("status", "Completed").order("return_date_actual", desc=True).limit(10).execute()
 
 # --- 4. CHECK-IN FORM ---
 if r_res.data:
     rental_options = {f"{r['fleet']['plate']} - {r['customers']['name']}": r for r in r_res.data}
-    selected_label = st.selectbox("Select Returning Vehicle", options=list(rental_options.keys()))
-    selected_rental = rental_options[selected_label]
-    
-    r_id = selected_rental['id']
-    v_id = selected_rental['vehicle_id']
+    selected_label = st.selectbox("Select Active Rental to Close", options=list(rental_options.keys()), index=None)
 
-    with st.form("checkin_form", clear_on_submit=True):
-        st.subheader(f"Return Inspection: {selected_rental['fleet']['plate']}")
+    if selected_label:
+        selected_rental = rental_options[selected_label]
         
-        col1, col2 = st.columns(2)
-        with col1:
-            # Display the odometer reading from when the car left
-            odo_departure = selected_rental.get('odo_out', 0)
-            st.info(f"📟 **Departure Odometer:** {odo_departure:,} km")
+        with st.form("checkin_form", clear_on_submit=True):
+            st.subheader(f"Inspection: {selected_rental['fleet']['plate']}")
             
-            # Input for the new reading
-            odo_in = st.number_input(
-                "Closing Odometer Reading (km)", 
-                min_value=int(odo_departure), 
-                step=1,
-                help="Enter current dashboard reading. Must be higher than departure."
-            )
-            
-        with col2:
-            fuel_in = st.select_slider(
-                "Return Fuel Level", 
-                options=["Empty", "1/8", "1/4", "3/8", "1/2", "5/8", "3/4", "7/8", "Full"], 
-                value="Full"
-            )
+            col1, col2 = st.columns(2)
+            with col1:
+                # ODOMETER TRACKING
+                # Show where the vehicle started
+                start_odo = selected_rental.get('odo_out', 0)
+                st.info(f"📟 **Departure Odometer:** {start_odo:,} km")
+                
+                # Input for current mileage - min_value ensures mileage can't go backwards
+                new_odo = st.number_input(
+                    "Return Odometer Reading (km)", 
+                    min_value=int(start_odo), 
+                    value=int(start_odo),
+                    help="Enter the current reading from the vehicle dashboard."
+                )
+                
+            with col2:
+                fuel_in = st.select_slider("Return Fuel Level", options=["Empty", "1/4", "1/2", "3/4", "Full"], value="Full")
+                condition = st.selectbox("Vehicle Condition", ["Clean / No Damage", "Needs Cleaning", "Minor Damage", "Major Damage / Accident"])
 
-        notes = st.text_area("Return Notes / Damage Inspection", placeholder="Describe any issues or mark as 'Clean'...")
-        
-        img_file = st.file_uploader("Upload Return Condition Photo (Optional)", type=['png', 'jpg', 'jpeg'])
+            notes = st.text_area("Inspection Notes", placeholder="Note any new scratches, mechanical issues, or items left behind...")
 
-        if st.form_submit_button("Finalize Return & Update Fleet", type="primary"):
-            photo_url = None
-            if img_file:
+            submitted = st.form_submit_button("Finalize Check-In", use_container_width=True, type="primary")
+
+            if submitted:
                 try:
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    file_path = f"returns/{r_id}_{timestamp}_{img_file.name}"
-                    supabase.storage.from_("vehicle-photos").upload(
-                        path=file_path,
-                        file=img_file.getvalue(),
-                        file_options={"content-type": img_file.type}
-                    )
-                    photo_url = supabase.storage.from_("vehicle-photos").get_public_url(file_path)
+                    # 1. Update the Rental Record with return stats
+                    supabase.table("rentals").update({
+                        "status": "Completed",
+                        "odo_in": new_odo,
+                        "fuel_in": fuel_in,
+                        "condition_on_return": condition,
+                        "notes": notes,
+                        "return_date_actual": datetime.now().isoformat()
+                    }).eq("id", selected_rental['id']).execute()
+
+                    # 2. Update the Fleet Master Record (Make it Available & update current Odometer)
+                    supabase.table("fleet").update({
+                        "status": "Available",
+                        "odometer": new_odo
+                    }).eq("id", selected_rental['vehicle_id']).execute()
+
+                    st.success(f"Vehicle {selected_rental['fleet']['plate']} is back in the yard and ready for the next rental!")
+                    st.rerun()
                 except Exception as e:
-                    st.error(f"Image Upload Failed: {e}")
-
-            # --- 6. DATABASE UPDATES ---
-            try:
-                # Update Rental Record with Closing Mileage
-                supabase.table("rentals").update({
-                    "status": "Completed",
-                    "fuel_in": fuel_in,
-                    "odo_in": odo_in,
-                    "notes": notes,
-                    "photo_proof_url": photo_url,
-                    "return_date_actual": str(datetime.now().date())
-                }).eq("id", r_id).execute()
-                
-                # Update Master Fleet Inventory with current mileage
-                supabase.table("fleet").update({
-                    "status": "Available",
-                    "odometer": odo_in
-                }).eq("id", v_id).execute()
-                
-                st.success(f"Success! {selected_rental['fleet']['plate']} is now back in inventory at {odo_in:,} km.")
-                st.balloons()
-                st.rerun()
-            except Exception as e:
-                st.error(f"Database Update Failed: {e}")
+                    st.error(f"Failed to process return: {e}")
 else:
-    st.info("No vehicles are currently marked as 'Active' rentals.")
+    st.info("No vehicles are currently out on rental.")
 
-# --- 5. RECENT RETURN HISTORY ---
+# --- 5. RECENT RETURNS REGISTRY ---
 st.write("---")
-st.subheader("📋 Recently Returned Vehicles")
+st.subheader("📋 Recently Returned Assets")
+
+history_res = supabase.table("rentals").select(
+    "id, return_date_actual, odo_in, fuel_in, fleet(plate, model), customers(name)"
+).eq("status", "Completed").order("return_date_actual", desc=True).limit(5).execute()
+
 if history_res.data:
     for rent in history_res.data:
         with st.container(border=True):
-            r1, r2, r3, r4 = st.columns([3, 3, 2, 1])
-            r1.write(f"🚗 **{rent['fleet']['plate']}**")
-            r1.caption(f"{rent['fleet']['model']}")
+            h1, h2, h3 = st.columns([3, 3, 2])
             
-            r2.write(f"👤 **{rent['customers']['name']}**")
-            r2.caption(f"Notes: {rent['notes'] if rent['notes'] else 'No issues'}")
+            h1.write(f"🚗 **{rent['fleet']['plate']}**")
+            h1.caption(f"Returned by {rent['customers']['name']}")
             
-            r3.write(f"📅 {rent['return_date_actual']}")
-            r3.caption(f"Fuel In: {rent['fuel_in']}")
+            # Format the date for readability
+            ret_date = datetime.fromisoformat(rent['return_date_actual']).strftime("%d %b, %H:%M")
+            h2.write(f"📅 {ret_date}")
+            h2.caption(f"Fuel In: {rent['fuel_in']}")
             
-            if r4.button("View", key=f"hist_{rent['id']}", use_container_width=True):
-                st.session_state[f"hist_detail_{rent['id']}\"] = not st.session_state.get(f"hist_detail_{rent['id']}", False)
-            
-            if st.session_state.get(f"hist_detail_{rent['id']}", False):
-                with st.container(border=True):
-                    sd1, sd2 = st.columns([2, 1])
-                    with sd1:
-                        st.markdown(f"**Final Total:** ${float(rent['total']):,.2f}")
-                        st.write(f"**Departure Fuel:** {rent['fuel_out']}")
-                    with sd2:
-                        if rent.get('photo_proof_url'):
-                            st.image(rent['photo_proof_url'], caption="Condition at Return")
+            h3.write(f"📟 {rent.get('odo_in', 0):,} km")
+            h3.caption("Final Mileage")
+else:
+    st.info("No recently completed rentals to display.")
