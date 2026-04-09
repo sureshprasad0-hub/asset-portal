@@ -1,9 +1,16 @@
 import streamlit as st
 from supabase import create_client, Client
+from PIL import Image
 
-st.set_page_config(page_title="Asset Portal | Login", layout="centered", initial_sidebar_state="collapsed")
+# --- 1. PAGE CONFIGURATION ---
+st.set_page_config(
+    page_title="RCA | Login",
+    page_icon="🚗",
+    layout="centered",
+    initial_sidebar_state="collapsed"
+)
 
-# --- 1. CONNECTION ---
+# --- 2. CONNECTION ---
 @st.cache_resource
 def init_connection():
     try:
@@ -14,56 +21,71 @@ def init_connection():
 
 supabase = init_connection()
 
-# --- 2. DEBUG TOGGLE (CFO USE ONLY) ---
-# Turn this ON to see why the login is failing
-debug_mode = st.sidebar.checkbox("Enable Login Debugging", value=False)
+# --- 3. CUSTOM CSS FOR RCA DESIGN ---
+st.markdown("""
+    <style>
+    .main {
+        background-color: #f8f9fa;
+    }
+    .stButton>button {
+        width: 100%;
+        border-radius: 5px;
+        height: 3em;
+        background-color: #ff4b4b;
+        color: white;
+    }
+    .login-header {
+        text-align: center;
+        padding-bottom: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
+# --- 4. SESSION STATE ---
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
+# --- 5. LOGIN INTERFACE ---
 if not st.session_state['logged_in']:
-    st.title("🚢 Private Asset Portal")
-    st.write("Secure access for **YOUR RENTAL & TOURS** staff.")
-    
-    with st.form("login_gate"):
-        u = st.text_input("Username").strip().lower()
-        p = st.text_input("Password", type="password").strip()
-        
-        if st.form_submit_button("Log In to Dashboard", use_container_width=True):
-            # STEP 1: Fetch the user by username ONLY to see if they exist
-            res = supabase.table("portal_users").select("*").eq("username", u).execute()
+    # Centered branding container
+    with st.container():
+        # Display Uploaded Logo
+        try:
+            logo = Image.open("image_717a44.png")
+            st.image(logo, width=280)
+        except:
+            st.write("🚗")
             
-            if debug_mode:
-                st.write("### --- DEBUG INFO ---")
-                st.write(f"Querying for Username: `{u}`")
-                st.write("Data found in DB:", res.data)
-            
-            if res.data:
-                user_record = res.data[0]
-                
-                # STEP 2: Check if 'password_hash' column exists or if it's named 'password'
-                # We use a flexible check here to help you debug
-                db_password = user_record.get('password_hash') or user_record.get('password')
-                
-                if debug_mode:
-                    st.write(f"Password in DB: `{db_password}`")
-                    st.write(f"Password entered: `{p}`")
+        st.markdown("<h1 class='login-header'>RENTAL CAR APPLICATION (RCA)</h1>", unsafe_allow_html=True)
+        st.caption("<center>Secure Management Portal | Fiji Operations</center>", unsafe_allow_html=True)
 
-                if db_password == p:
+        with st.form("login_gate"):
+            u = st.text_input("Username", placeholder="e.g. admin").strip().lower()
+            p = st.text_input("Password", type="password").strip()
+            
+            if st.form_submit_button("Sign In to RCA Dashboard"):
+                # Authenticate via portal_users table
+                res = supabase.table("portal_users").select("*").eq("username", u).eq("password_hash", p).execute()
+                if res.data:
                     st.session_state.update({
                         "logged_in": True, 
-                        "user_role": user_record.get('role', 'Staff'), 
-                        "user_name": user_record.get('full_name', u)
+                        "user_role": res.data[0]['role'], 
+                        "user_name": res.data[0]['full_name']
                     })
                     st.success("Login Successful!")
                     st.rerun()
                 else:
-                    st.error("Invalid Credentials (Password Mismatch).")
-            else:
-                st.error("Invalid Credentials (User not found).")
+                    st.error("Invalid credentials. Please contact your system administrator.")
+
+# --- 6. AUTHENTICATED LANDING ---
 else:
+    # Fetch dynamic company name from settings
+    c_res = supabase.table("settings").select("config_value").eq("config_key", "company_name").execute()
+    company_name = c_res.data[0]['config_value'] if c_res.data else "YOUR RENTAL & TOURS"
+    
     st.title(f"👋 Bula, {st.session_state['user_name']}!")
-    st.info("You are currently logged in.")
+    st.info(f"System Live: **{company_name}**. Please use the sidebar to navigate.")
+    
     if st.button("Secure Logout"):
         st.session_state['logged_in'] = False
         st.rerun()
