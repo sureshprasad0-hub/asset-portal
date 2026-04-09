@@ -87,20 +87,39 @@ if st.button("Finalize & Save Rental Agreement", type="primary", use_container_w
         except Exception as e:
             st.error(f"Error: {e}")
 
-# --- 6. CURRENTLY ACTIVE REGISTRY ---
+# --- 6. CURRENTLY ACTIVE REGISTRY (DEBUG VERSION) ---
 st.write("---")
 st.subheader("📋 Currently Out (Active)")
+
 try:
-    rent_res = supabase.table("rentals").select("*, fleet(plate, model), customers(name)").eq("status", "Active").execute()
+    # 1. We try the join again
+    rent_res = supabase.table("rentals") \
+        .select("id, total, date_out, odo_out, fleet(plate, model), customers(name)") \
+        .eq("status", "Active") \
+        .execute()
+
     if rent_res.data:
         for r in rent_res.data:
             with st.container(border=True):
                 r1, r2, r3 = st.columns([3, 3, 2])
-                r1.write(f"🚗 **{r['fleet']['plate']}**")
-                r2.write(f"👤 {r['customers']['name']}")
+                
+                # Use .get() to avoid crashing if the join returned None
+                plate = r.get('fleet', {}).get('plate', 'N/A') if r.get('fleet') else "Unknown Vehicle"
+                cust_name = r.get('customers', {}).get('name', 'N/A') if r.get('customers') else "Unknown Customer"
+                
+                r1.write(f"🚗 **{plate}**")
+                r2.write(f"👤 {cust_name}")
                 r3.write(f"💰 **${float(r['total']):,.2f}**")
                 st.caption(f"Out since: {r['date_out']} | Start Odo: {r['odo_out']} km")
     else:
         st.info("No vehicles are currently out on rental.")
-except:
-    st.error("Check database relationships for Active list.")
+
+except Exception as e:
+    # --- THIS PART WILL TELL US THE REAL PROBLEM ---
+    st.error("⚠️ Database Error Detected")
+    st.code(str(e)) # This prints the actual error from Supabase
+    
+    st.info("Attempting fallback view (No Names)...")
+    # Fallback: Just show the IDs so the app doesn't feel broken
+    fallback = supabase.table("rentals").select("*").eq("status", "Active").execute()
+    st.write(fallback.data)
