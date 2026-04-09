@@ -26,7 +26,7 @@ def enter_fleet_add():
 
 st.title("🚗 Fleet Inventory")
 
-# Fetch Company Name for the Header
+# Fetch Company Name
 c_res = supabase.table("settings").select("config_value").eq("config_key", "company_name").execute()
 company_display = c_res.data[0]['config_value'] if c_res.data else "YOUR RENTAL & TOURS"
 st.caption(f"📍 {company_display}")
@@ -55,7 +55,7 @@ if st.session_state.fleet_view in ["add", "edit"]:
             plate = st.text_input("Number Plate", value=v.get('plate', "")).strip().upper()
             brand = st.selectbox("Brand", options=brand_options, index=brand_options.index(v['brand']) if v.get('brand') in brand_options else 0)
             model = st.text_input("Model", value=v.get('model', ""))
-            # Odometer Field Added to Form
+            # Odometer tracking
             odometer = st.number_input("Current Odometer (km)", value=int(v.get('odometer', 0)), min_value=0)
             
         with col2:
@@ -64,7 +64,10 @@ if st.session_state.fleet_view in ["add", "edit"]:
             status = st.selectbox("Status", ["Available", "Maintenance", "Rented"], disabled=(v.get('status') == "Rented"))
             color = st.color_picker("Display Color", value=v.get('color', "#ff4b4b"))
 
-        if st.form_submit_button("Save Asset"):
+        # FIXED: This button is now INSIDE the form block
+        submitted = st.form_submit_button("Save Asset Details", use_container_width=True, type="primary")
+        
+        if submitted:
             payload = {
                 "plate": plate, "brand": brand, "model": model, 
                 "odometer": odometer, "type": v_type, 
@@ -81,7 +84,7 @@ if st.session_state.fleet_view in ["add", "edit"]:
             st.session_state.fleet_view = "list"
             st.rerun()
 
-    if st.button("Cancel"):
+    if st.button("⬅️ Back to List"):
         st.session_state.fleet_view = "list"
         st.rerun()
 
@@ -97,44 +100,29 @@ else:
     
     if f_res.data:
         df_fleet = pd.DataFrame(f_res.data)
-        
-        # Table Header
         st.write("---")
-        h1, h2, h3, h4 = st.columns([3, 2, 2, 1])
-        h1.caption("**PLATE & MILEAGE**")
-        h2.caption("**LOCATION & STATUS**")
-        h3.caption("**DETAILS**")
-        h4.caption("**ACTION**")
-
+        
         for _, row in df_fleet.iterrows():
-            s_plate = str(row['plate'])
-            s_model = str(row['model'])
-            
-            if search and search.lower() not in s_plate.lower() and search.lower() not in s_model.lower():
+            if search and search.lower() not in str(row['plate']).lower() and search.lower() not in str(row['model']).lower():
                 continue
                 
-            with st.container():
+            with st.container(border=True):
                 r1, r2, r3, r4 = st.columns([3, 2, 2, 1])
                 status = row['status']
                 icon = "🟢" if status == "Available" else "🔴" if status == "Rented" else "🟡"
                 
-                # Column 1: Plate and Updated Odometer Display
-                r1.write(f"{icon} **{s_plate}**")
+                r1.write(f"{icon} **{row['plate']}**")
                 r1.caption(f"📟 {row.get('odometer', 0):,} km")
                 
-                # Column 2: Location and Status
                 r2.write(f"{row['location']}")
                 r2.caption(f"Status: {status}")
                 
-                # Column 3: Brand & Model
                 r3.write(f"{row['brand']}")
-                r3.caption(f"{s_model} | {row.get('type', 'N/A')}")
+                r3.caption(f"{row['model']} | {row.get('type', 'N/A')}")
                 
-                # Column 4: Edit Button
                 if r4.button("Edit", key=f"v_ed_{row['id']}", use_container_width=True):
                     st.session_state.selected_vehicle = row
                     st.session_state.fleet_view = "edit"
                     st.rerun()
-            st.divider()
     else:
         st.info("No vehicles currently in the database.")
