@@ -24,11 +24,12 @@ search = st.text_input("🔍 Search by Number Plate or Customer Name", placehold
 
 # --- 3. FETCH COMPLETED RECORDS ---
 try:
-    # FIXED: Added explicit relationship tags !fk_rentals_fleet and !fk_rentals_customers
+    # FIXED: Changed ordering from 'created_at' to 'date_out' 
+    # to resolve the 'column does not exist' error.
     hist_res = supabase.table("rentals") \
         .select("*, fleet!fk_rentals_fleet(plate, model, brand), customers!fk_rentals_customers(name)") \
         .eq("status", "Completed") \
-        .order("created_at", desc=True) \
+        .order("date_out", desc=True) \
         .execute()
 
     if hist_res.data:
@@ -43,7 +44,6 @@ try:
                 with st.container(border=True):
                     c1, c2, c3, c4 = st.columns([2, 3, 2, 1])
                     
-                    # Accessing nested data through the specific relationship keys
                     fleet_info = h.get('fleet', {})
                     cust_info = h.get('customers', {})
                     
@@ -51,6 +51,7 @@ try:
                     c1.caption(f"{fleet_info.get('brand', '')} {fleet_info.get('model', '')}")
                     
                     c2.write(f"👤 **{cust_info.get('name', 'N/A')}**")
+                    # Using get() for date_returned as it might be null
                     c2.caption(f"Check-in: {h.get('date_returned', 'N/A')}")
                     
                     c3.write(f"💵 **${float(h.get('total') or 0):,.2f}**")
@@ -65,7 +66,6 @@ try:
         st.info("No completed rentals in the database.")
         
 except Exception as e:
-    # This will now display the specific error if the join still fails
     st.error("Could not load history.")
     with st.expander("Show Error Details"):
         st.code(str(e))
