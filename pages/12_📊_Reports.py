@@ -47,7 +47,6 @@ def safe_date(date_val, default=date(1995, 1, 1)):
 if report_mode == "📄 Rental Agreement Template":
     st.subheader("Generate Rental Out Report")
     
-    # FIXED: Added explicit foreign key relationship names to resolve APIError
     try:
         rentals_query = supabase.table("rentals") \
             .select("id, date_out, fleet!fk_rentals_fleet(plate), customers!fk_rentals_customers(name)") \
@@ -60,7 +59,6 @@ if report_mode == "📄 Rental Agreement Template":
             rental_id = options[selected_label]
             
             if st.button("Generate Full Page Report"):
-                # Fetch full details using explicit FK names
                 r_res = supabase.table("rentals") \
                     .select("*, fleet!fk_rentals_fleet(*), customers!fk_rentals_customers(*)") \
                     .eq("id", rental_id).single().execute()
@@ -76,7 +74,8 @@ if report_mode == "📄 Rental Agreement Template":
                         st.write(f"📍 {branding.get('company_address', 'Fiji')}")
                         st.write(f"📞 {branding.get('company_phone', '')} | ✉️ {branding.get('company_email', '')}")
                     
-                    st.markdown("<h2 style='text-align: center;'>RENTAL AGREEMENT / VEHICLE OUT REPORT</h2>", unsafe_content_allowed=True)
+                    # FIXED: Changed unsafe_content_allowed to unsafe_allow_html
+                    st.markdown("<h2 style='text-align: center;'>RENTAL AGREEMENT / VEHICLE OUT REPORT</h2>", unsafe_allow_html=True)
                     st.divider()
                     
                     c1, c2 = st.columns(2)
@@ -104,7 +103,8 @@ if report_mode == "📄 Rental Agreement Template":
                         if sig_data:
                             st.image(sig_data, width=250)
                         else:
-                            st.write("__________________________")
+                            # FIXED: Changed unsafe_content_allowed to unsafe_allow_html
+                            st.markdown("<br><br>__________________________", unsafe_allow_html=True)
                     with s2:
                         st.markdown("### 📝 REMARKS")
                         st.info(r.get('notes') or "No remarks.")
@@ -116,7 +116,6 @@ if report_mode == "📄 Rental Agreement Template":
 # --- 5. REVENUE & FINANCIALS ---
 elif report_mode == "💰 Revenue & Financials":
     st.subheader("Revenue & Financial Performance")
-    # Updated with explicit FKs
     res = supabase.table("rentals").select("*, fleet!fk_rentals_fleet(plate, brand), customers!fk_rentals_customers(name)").execute()
 
     if res.data:
@@ -131,4 +130,69 @@ elif report_mode == "💰 Revenue & Financials":
 
         st.dataframe(df[['date_out', 'fleet!fk_rentals_fleet.plate', 'customers!fk_rentals_customers.name', 'total', 'status']], use_container_width=True, hide_index=True)
 
-# --- [REST OF ORIGINAL REPORT CATEGORIES 6-8 REMAIN UNCHANGED] ---
+# --- 6. ALL CUSTOMERS ---
+elif report_mode == "👥 All Customers":
+    st.subheader("Complete Customer Registry")
+    res = supabase.table("customers").select("*").order("name").execute()
+    
+    if res.data:
+        df_cust = pd.DataFrame(res.data)
+        display_df = df_cust.drop(columns=['license_scan_path']) if 'license_scan_path' in df_cust.columns else df_cust
+        st.write(f"**Total Registered:** {len(display_df)}")
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        
+        csv = display_df.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download CSV", csv, "all_customers.csv", "text/csv")
+    else:
+        st.info("The customer registry is currently empty.")
+
+# --- 7. ACTIVE RENTAL CUSTOMERS ---
+elif report_mode == "🚗 Active Rental Customers":
+    st.subheader("Current Active Rentals")
+    res = supabase.table("rentals").select("*, customers!fk_rentals_customers(name, phone), fleet!fk_rentals_fleet(plate, model)").execute()
+    
+    if res.data:
+        df_active = pd.json_normalize(res.data)
+        active_list = df_active[df_active['status'].isin(['Active', 'Out'])]
+        
+        if not active_list.empty:
+            st.dataframe(active_list[['customers!fk_rentals_customers.name', 'customers!fk_rentals_customers.phone', 'fleet!fk_rentals_fleet.plate', 'date_out', 'total']], use_container_width=True, hide_index=True)
+        else:
+            st.info("There are no active rentals currently out.")
+    else:
+        st.info("No rental records found to analyze.")
+
+# --- 8. OVERDUE RENTALS ---
+elif report_mode == "⏳ Overdue Rentals":
+    st.subheader("Overdue & Delinquent Audit")
+    res = supabase.table("rentals").select("*, customers!fk_rentals_customers(name, phone), fleet!fk_rentals_fleet(plate)").execute()
+    
+    if res.data:
+        df_overdue = pd.json_normalize(res.data)
+        active_items = df_overdue[df_overdue['status'].isin(['Active', 'Out'])]
+        
+        if not active_items.empty:
+            st.warning("Review these active contracts for return-date compliance.")
+            st.dataframe(active_items[['customers!fk_rentals_customers.name', 'fleet!fk_rentals_fleet.plate', 'date_out', 'total']], use_container_width=True, hide_index=True)
+        else:
+            st.success("No active rentals found to review.")
+    else:
+        st.info("No rental history found to check for overdue items.")
+
+# --- 9. COMPLIANCE RISK (EXPIRED IDs) ---
+elif report_mode == "⚠️ Compliance Risk":
+    st.subheader("Customer ID Compliance Audit")
+    res = supabase.table("customers").select("name, dl_no, dl_expiry, phone").execute()
+    
+    if res.data:
+        df_risk = pd.DataFrame(res.data)
+        df_risk['expiry_dt'] = df_risk['dl_expiry'].apply(lambda x: safe_date(x, default=date.today()))
+        expired = df_risk[df_risk['expiry_dt'] < date.today()]
+        
+        if not expired.empty:
+            st.error(f"Alert: {len(expired)} customers have expired licenses.")
+            st.dataframe(expired[['name', 'dl_no', 'dl_expiry', 'phone']], use_container_width=True, hide_index=True)
+        else:
+            st.success("All customer IDs in the system are currently valid and compliant.")
+    else:
+        st.info("No customer data available for compliance check.")
