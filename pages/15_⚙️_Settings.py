@@ -16,14 +16,30 @@ st.caption(f"📍 {company_display}")
 
 # --- 3. COMPANY CONFIGURATION ---
 with st.expander("🏢 Company Branding", expanded=True):
-    c_res = supabase.table("settings").select("config_value").eq("config_key", "company_name").execute()
-    current_name = c_res.data[0]['config_value'] if c_res.data else "YOUR RENTAL & TOURS"
+    # Fetch all branding settings at once
+    set_res = supabase.table("settings").select("*").in_("config_key", ["company_name", "company_address", "company_phone", "company_email"]).execute()
+    settings_dict = {item['config_key']: item['config_value'] for item in set_res.data}
     
-    new_name = st.text_input("Organisation Name", value=current_name).strip().upper()
+    col_branding1, col_branding2 = st.columns(2)
     
-    if st.button("Update Company Name"):
-        supabase.table("settings").upsert({"config_key": "company_name", "config_value": new_name}).execute()
-        st.success(f"Company name updated to: {new_name}")
+    with col_branding1:
+        new_name = st.text_input("Organisation Name", value=settings_dict.get("company_name", "YOUR RENTAL & TOURS")).strip().upper()
+        new_address = st.text_input("Physical Address", value=settings_dict.get("company_address", "Suva, Fiji")).strip()
+        
+    with col_branding2:
+        new_email = st.text_input("Business Email", value=settings_dict.get("company_email", "info@rental.com.fj")).strip()
+        new_phone = st.text_input("Phone Number", value=settings_dict.get("company_phone", "+679")).strip()
+    
+    if st.button("Update Organisation Details"):
+        # Save each field to the settings table
+        payload = [
+            {"config_key": "company_name", "config_value": new_name},
+            {"config_key": "company_address", "config_value": new_address},
+            {"config_key": "company_email", "config_value": new_email},
+            {"config_key": "company_phone", "config_value": new_phone}
+        ]
+        supabase.table("settings").upsert(payload).execute()
+        st.success("Organisation details updated successfully.")
         st.rerun()
 
 # --- 4. VAT & FINANCIAL CONFIGURATION ---
@@ -43,7 +59,6 @@ with st.expander("💰 VAT & Financials", expanded=False):
     res_fuel = supabase.table("settings").select("config_value").eq("config_key", "fuel_surcharge").execute()
     current_fuel = float(res_fuel.data[0]['config_value']) if res_fuel.data else 0.00
     
-    # Dollars and cents format using %.2f
     new_fuel = st.number_input("Fuel Surcharge per Litre ($)", value=current_fuel, min_value=0.00, step=0.01, format="%.2f")
 
     if st.button("Update Fuel Surcharge"):
