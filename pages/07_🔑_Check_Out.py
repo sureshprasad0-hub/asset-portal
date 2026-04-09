@@ -1,7 +1,7 @@
 import streamlit as st
 from datetime import datetime, timedelta
 from supabase import create_client, Client
-from streamlit_drawable_canvas import st_canvas  # Ensure this is installed
+from streamlit_drawable_canvas import st_canvas
 
 # --- 1. GATEKEEPER & CONNECTION ---
 if 'logged_in' not in st.session_state or not st.session_state['logged_in']:
@@ -70,67 +70,81 @@ with st.container(border=True):
 # --- 5. SIGNATURE FIELD ---
 st.write("### 🖋️ Customer Signature")
 signature_canvas = st_canvas(
-    fill_color="rgba(255, 255, 255, 0)",
-    stroke_width=3,
-    stroke_color="#000000",
-    background_color="#eeeeee",
-    height=150,
-    drawing_mode="freedraw",
-    key="canvas",
+    fill_color="rgba(255, 255, 255, 0)", stroke_width=3, stroke_color="#000000",
+    background_color="#eeeeee", height=150, drawing_mode="freedraw", key="canvas",
 )
 
 # --- 6. SUBMISSION ---
 if st.button("Finalize & Save Agreement", type="primary", use_container_width=True):
-    # Basic check to see if signature has been attempted (optional but recommended)
     if not v_choice or not c_choice or total_hours <= 0:
         st.error("Please complete all selections and ensure the return time is valid.")
-    elif signature_canvas.image_data is None:
-        st.warning("Please provide a customer signature before finalizing.")
     else:
         try:
             vid = next(v['id'] for v in v_res.data if v['plate'] == v_choice)
             cid = next(c['id'] for c in c_res.data if c['name'] == c_choice)
             
             payload = {
-                "vehicle_id": vid, 
-                "customer_id": cid, 
-                "rate": daily_rate,
-                "bond": bond_amount,
-                "subtotal": round(subtotal, 2), 
-                "tax_amount": round(tax_amount, 2),
-                "total": round(gross_total, 2), 
-                "fuel_out": fuel_out,
-                "odo_out": current_odo, 
-                "date_out": time_out.isoformat(), 
-                "date_in": time_in_target.isoformat(), 
+                "vehicle_id": vid, "customer_id": cid, "rate": daily_rate,
+                "bond": bond_amount, "subtotal": round(subtotal, 2), 
+                "tax_amount": round(tax_amount, 2), "total": round(gross_total, 2), 
+                "fuel_out": fuel_out, "odo_out": current_odo, 
+                "date_out": time_out.isoformat(), "date_in": time_in_target.isoformat(), 
                 "status": "Active"
             }
             
             supabase.table("rentals").insert(payload).execute()
             supabase.table("fleet").update({"status": "Rented"}).eq("id", vid).execute()
-            st.success("Rental Agreement Active & Signature Captured!")
+            st.success("Rental Agreement Active!")
             st.rerun()
         except Exception as e:
             st.error(f"Error: {e}")
 
-# --- 7. ACTIVE REGISTRY ---
+# --- 7. ACTIVE REGISTRY (WITH EDIT FEATURE) ---
 st.write("---")
 st.subheader("📋 Currently Out (Active)")
+
+@st.dialog("Edit Active Rental")
+def edit_rental(rental):
+    st.write(f"Editing Agreement for **{rental['fleet']['plate']}**")
+    new_rate = st.number_input("Update Daily Rate", value=float(rental['rate']))
+    new_bond = st.number_input("Update Bond", value=float(rental['bond']))
+    new_return = st.datetime_input("Update Expected Return", value=datetime.fromisoformat(rental['date_in']))
+    
+    if st.button("Save Changes"):
+        # Recalculate totals for the update
+        d_out = datetime.fromisoformat(rental['date_out'])
+        new_duration = new_return - d_out
+        new_hours = max(0.0, new_duration.total_seconds() / 3600)
+        new_gross = (new_hours / 24) * new_rate
+        new_sub = new_gross / (1 + (vat_pct / 100))
+        new_tax = new_gross - new_sub
+        
+        upd_payload = {
+            "rate": new_rate, "bond": new_bond, "date_in": new_return.isoformat(),
+            "total": round(new_gross, 2), "subtotal": round(new_sub, 2), "tax_amount": round(new_tax, 2)
+        }
+        supabase.table("rentals").update(upd_payload).eq("id", rental['id']).execute()
+        st.success("Rental Updated!")
+        st.rerun()
+
 try:
     rent_res = supabase.table("rentals") \
-        .select("id, total, bond, date_out, odo_out, fleet!fk_rentals_fleet(plate), customers!fk_rentals_customers(name)") \
-        .eq("status", "Active") \
-        .execute()
+        .select("id, total, bond, rate, date_out, date_in, odo_out, fuel_out, fleet!fk_rentals_fleet(plate), customers!fk_rentals_customers(name)") \
+        .eq("status", "Active").execute()
 
     if rent_res.data:
         for r in rent_res.data:
             with st.container(border=True):
-                r1, r2, r3 = st.columns([3, 3, 2])
+                r1, r2, r3, r4 = st.columns([2, 3, 2, 1])
                 r1.write(f"🚗 **{r['fleet']['plate']}**")
                 r2.write(f"👤 {r['customers']['name']}")
                 r3.write(f"💰 **${float(r['total']):,.2f}**")
-                st.caption(f"Bond: ${r['bond']} | Out since: {r['date_out']}")
+                
+                if r4.button("Edit", key=f"edit_{r['id']}"):
+                    edit_rental(r)
+                
+                st.caption(f"Bond: ${r['bond']} | Out: {r['date_out']} | Fuel: {r['fuel_out']}")
     else:
         st.info("No active rentals.")
-except:
-    st.warning("Active list view limited.")
+except Exception as e:
+    st.error(f"Error loading active list: {e}")
