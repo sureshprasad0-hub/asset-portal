@@ -81,9 +81,9 @@ if st.session_state.fleet_view in ["add", "edit"]:
             s_idx = status_list.index(s_val) if s_val in status_list else 0
             status = st.selectbox("Status", status_list, index=s_idx, disabled=(s_val == "Rented"))
             
-            # COLOR: Default to red if blank
-            saved_color = v.get('color', "#ff4b4b")
-            color = st.color_picker("Display Color", value=saved_color)
+            # COLOR: Changed from color_picker to text_input as requested
+            saved_color = v.get('color', "")
+            color = st.text_input("Vehicle Color", value=saved_color, placeholder="e.g. Metallic Blue or #0000FF")
 
         # SUBMIT BUTTON: Must be inside form
         submitted = st.form_submit_button("Save Asset Details", use_container_width=True, type="primary")
@@ -160,7 +160,7 @@ else:
                 r2.write(f"{row['location']}")
                 r2.caption(f"Status: {status}")
                 
-                # Show brand, model, and the selected color badge
+                # Show brand, model, and the written color
                 r3.write(f"{row['brand']}")
                 r3.caption(f"{s_model} | {row.get('color', 'N/A')}")
                 
