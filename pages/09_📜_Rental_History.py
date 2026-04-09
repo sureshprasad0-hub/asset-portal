@@ -24,8 +24,6 @@ search = st.text_input("🔍 Search by Number Plate or Customer Name", placehold
 
 # --- 3. FETCH COMPLETED RECORDS ---
 try:
-    # FIXED: Changed ordering from 'created_at' to 'date_out' 
-    # to resolve the 'column does not exist' error.
     hist_res = supabase.table("rentals") \
         .select("*, fleet!fk_rentals_fleet(plate, model, brand), customers!fk_rentals_customers(name)") \
         .eq("status", "Completed") \
@@ -33,7 +31,6 @@ try:
         .execute()
 
     if hist_res.data:
-        # Filter logic
         filtered_data = [
             h for h in hist_res.data 
             if search in h['fleet']['plate'].lower() or search in h['customers']['name'].lower()
@@ -51,15 +48,29 @@ try:
                     c1.caption(f"{fleet_info.get('brand', '')} {fleet_info.get('model', '')}")
                     
                     c2.write(f"👤 **{cust_info.get('name', 'N/A')}**")
-                    # Using get() for date_returned as it might be null
-                    c2.caption(f"Check-in: {h.get('date_returned', 'N/A')}")
+                    c2.caption(f"Checked in: {h.get('return_date_actual', 'N/A')}")
                     
                     c3.write(f"💵 **${float(h.get('total') or 0):,.2f}**")
                     c3.caption(f"Status: {h['status']}")
                     
-                    # Detailed View
+                    # --- IMPROVED DETAILED VIEW ---
                     if c4.button("View", key=f"hist_{h['id']}"):
-                        st.json(h)
+                        with st.expander("📄 Full Rental Details", expanded=True):
+                            v1, v2 = st.columns(2)
+                            with v1:
+                                st.markdown(f"**Vehicle:** {fleet_info.get('brand')} {fleet_info.get('model')} ({fleet_info.get('plate')})")
+                                st.markdown(f"**Customer:** {cust_info.get('name')}")
+                                st.markdown(f"**Period:** {h.get('date_out')} to {h.get('return_date_actual')}")
+                                st.markdown(f"**Odometer:** {h.get('odo_out')} → {h.get('odo_in')} km")
+                            with v2:
+                                st.markdown(f"**Daily Rate:** ${h.get('rate')}")
+                                st.markdown(f"**Subtotal:** ${h.get('subtotal')}")
+                                st.markdown(f"**VAT:** ${h.get('tax_amount')}")
+                                st.markdown(f"**Grand Total:** ${h.get('total')}")
+                            
+                            st.divider()
+                            st.markdown(f"**Fuel Out/In:** {h.get('fuel_out')} / {h.get('fuel_in')}")
+                            st.info(f"**Notes:** {h.get('notes') or 'No notes provided.'}")
         else:
             st.info("No matching records found.")
     else:
