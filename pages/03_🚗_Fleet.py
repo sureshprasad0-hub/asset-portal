@@ -37,7 +37,7 @@ try:
     brand_options = [b['brand_name'] for b in brand_res.data] if brand_res.data else ["Other"]
     
     loc_res = supabase.table("operating_locations").select("location_name").order("location_name").execute()
-    loc_options = [l['location_name'] for l in loc_res.data] if loc_res.data else ["Main Yard"]
+    loc_options = [l['location_name'] for l in loc_res.data] if l_res.data else ["Main Yard"]
 except:
     brand_options = ["Standard"]
     loc_options = ["Main Yard"]
@@ -49,6 +49,7 @@ if st.session_state.fleet_view in ["add", "edit"]:
     
     st.subheader("🛠️ Asset Details" if mode == "edit" else "➕ Register New Asset")
     
+    # Use the form block
     with st.form("vehicle_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
@@ -64,12 +65,15 @@ if st.session_state.fleet_view in ["add", "edit"]:
             status = st.selectbox("Status", ["Available", "Maintenance", "Rented"], disabled=(v.get('status') == "Rented"))
             color = st.color_picker("Display Color", value=v.get('color', "#ff4b4b"))
 
-        if st.form_submit_button("Save Asset Details", use_container_width=True, type="primary"):
+        # The submit button MUST be inside the 'with st.form' block
+        submitted = st.form_submit_button("Save Asset Details", use_container_width=True, type="primary")
+        
+        if submitted:
             payload = {
                 "plate": plate, 
                 "brand": brand, 
                 "model": model, 
-                "odometer": odometer, # Saved to database
+                "odometer": odometer, 
                 "type": v_type, 
                 "location": location, 
                 "status": status, 
