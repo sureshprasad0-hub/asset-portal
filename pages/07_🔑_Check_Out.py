@@ -13,8 +13,8 @@ supabase: Client = create_client(url, key)
 
 st.title("🔑 New Rental Agreement")
 
-# --- 2. DATA FETCHING ---
-# We fetch 'odometer' here so it can be displayed instantly
+# --- 2. DATA FETCHING (Main Inputs) ---
+# We fetch basic data first to ensure the core page loads
 v_res = supabase.table("fleet").select("id, plate, odometer, model").eq("status", "Available").execute()
 c_res = supabase.table("customers").select("id, name").order("name").execute()
 vat_setting = supabase.table("settings").select("config_value").eq("config_key", "vat_rate").execute()
@@ -27,7 +27,6 @@ with col_a:
     v_choice = st.selectbox("Select Vehicle", options=[v['plate'] for v in v_res.data], index=None)
     c_choice = st.selectbox("Select Customer", options=[c['name'] for c in c_res.data], index=None)
     
-    # ODOMETER DISPLAY: Shown immediately under the selection
     current_odo = 0
     if v_choice:
         v_data = next((v for v in v_res.data if v['plate'] == v_choice), None)
@@ -46,16 +45,13 @@ with col1:
 with col2:
     time_in_target = st.datetime_input("Expected Return", value=datetime.now() + timedelta(days=1), step=timedelta(minutes=15))
 
-# --- 4. REAL-TIME CALCULATION (Hourly Pro-Rata) ---
+# --- 4. CALCULATION ---
 duration = time_in_target - time_out
 total_hours = max(0.0, duration.total_seconds() / 3600)
-
-# Formula: (Total Hours / 24) * Daily Rate
 subtotal = (total_hours / 24) * daily_rate
 tax_total = subtotal * (vat_pct / 100)
 grand_total = subtotal + tax_total
 
-# Live Quote Summary (Updates instantly)
 with st.container(border=True):
     st.write("### 📊 Live Quote Summary")
     q1, q2, q3 = st.columns(3)
@@ -63,10 +59,10 @@ with st.container(border=True):
     q2.metric("Subtotal", f"${subtotal:,.2f}")
     q3.metric("Grand Total", f"${grand_total:,.2f}")
 
-# --- 5. FINAL SUBMISSION ---
+# --- 5. SUBMISSION ---
 if st.button("Finalize & Save Rental Agreement", type="primary", use_container_width=True):
     if not v_choice or not c_choice or total_hours <= 0:
-        st.error("Please check vehicle selection and ensure return time is in the future.")
+        st.error("Please check vehicle selection and valid return time.")
     else:
         try:
             vid = next(v['id'] for v in v_res.data if v['plate'] == v_choice)
@@ -82,43 +78,51 @@ if st.button("Finalize & Save Rental Agreement", type="primary", use_container_w
             
             supabase.table("rentals").insert(payload).execute()
             supabase.table("fleet").update({"status": "Rented"}).eq("id", vid).execute()
-            
-            st.success(f"Success! {v_choice} is now active.")
+            st.success("Success!")
             st.rerun()
         except Exception as e:
-            st.error(f"Error processing checkout: {e}")
+            st.error(f"Error: {e}")
 
-# --- 6. REGISTRIES WITH VIEW DETAILS ---
+# --- 6. REGISTRIES WITH ERROR PROTECTION ---
 st.write("---")
 tab1, tab2 = st.tabs(["📋 Active Rentals", "📜 Completed History"])
 
 with tab1:
-    rent_res = supabase.table("rentals").select("*, fleet(plate, model), customers(name)").eq("status", "Active").execute()
-    if rent_res.data:
-        for r in rent_res.data:
-            with st.container(border=True):
-                r1, r2, r3, r4 = st.columns([3, 3, 2, 1])
-                r1.write(f"🚗 **{r['fleet']['plate']}**")
-                r2.write(f"👤 {r['customers']['name']}")
-                r3.write(f"💰 **${float(r['total']):,.2f}**")
-                if r4.button("View", key=f"act_{r['id']}"):
-                    st.write(f"**Full Details for {r['fleet']['plate']}**")
-                    st.write(f"- Departure: {r['date_out']}")
-                    st.write(f"- Start Odometer: {r['odo_out']} km")
-                    st.write(f"- Daily Rate Set: ${r['rate']}")
-    else:
-        st.info("No active rentals found.")
+    try:
+        rent_res = supabase.table("rentals").select("*, fleet(plate, model), customers(name)").eq("status", "Active").execute()
+        if rent_res.data:
+            for r in rent_res.data:
+                with st.container(border=True):
+                    r1, r2, r3, r4 = st.columns([3, 3, 2, 1])
+                    r1.write(f"🚗 **{r['fleet']['plate']}**")
+                    r2.write(f"👤 {r['customers']['name']}")
+                    r3.write(f"💰 **${float(r['total']):,.2f}**")
+                    if r4.button("View", key=f"act_{r['id']}"):
+                        st.write(f"**Departure:** {r['date_out']} | **Odo:** {r['odo_out']} km")
+        else:
+            st.info("No active rentals.")
+    except Exception as e:
+        st.error("Could not load Active Rentals. Check database relationships.")
 
 with tab2:
-    hist_res = supabase.table("rentals").select("*, fleet(plate, model), customers(name)").eq("status", "Completed").order("created_at", desc=True).limit(5).execute()
-    if hist_res.data:
-        for h in hist_res.data:
-            with st.container(border=True):
-                h1, h2, h3, h4 = st.columns([3, 3, 2, 1])
-                h1.write(f"🏁 **{h['fleet']['plate']}**")
-                h2.write(f"👤 {h['customers']['name']}")
-                h3.write(f"💵 ${float(h['total']):,.2f}")
-                if h4.button("View", key=f"hist_{h['id']}"):
-                    st.json(h) # Displays all historical data fields
-    else:
-        st.info("No rental history found.")
+    try:
+        # If this fails, it's likely the join syntax. 
+        # We try a simpler select if the complex one fails.
+        hist_res = supabase.table("rentals").select("*, fleet(plate, model), customers(name)").eq("status", "Completed").order("created_at", desc=True).limit(5).execute()
+        
+        if hist_res.data:
+            for h in hist_res.data:
+                with st.container(border=True):
+                    h1, h2, h3, h4 = st.columns([3, 3, 2, 1])
+                    h1.write(f"🏁 **{h['fleet']['plate']}**")
+                    h2.write(f"👤 {h['customers']['name']}")
+                    h3.write(f"💵 ${float(h['total']):,.2f}")
+                    if h4.button("View", key=f"hist_{h['id']}"):
+                        st.json(h)
+        else:
+            st.info("No history found.")
+    except Exception as e:
+        st.warning("History view limited. Detailed view below.")
+        # Fallback to simple fetch if relationship join fails
+        fallback = supabase.table("rentals").select("*").eq("status", "Completed").limit(5).execute()
+        st.write(fallback.data)
