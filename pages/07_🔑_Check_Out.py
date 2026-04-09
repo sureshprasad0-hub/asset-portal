@@ -87,14 +87,14 @@ if st.button("Finalize & Save Rental Agreement", type="primary", use_container_w
         except Exception as e:
             st.error(f"Error: {e}")
 
-# --- 6. CURRENTLY ACTIVE REGISTRY (DEBUG VERSION) ---
+# --- 6. CURRENTLY ACTIVE REGISTRY ---
 st.write("---")
 st.subheader("📋 Currently Out (Active)")
 
 try:
-    # 1. We try the join again
+    # We add !fk_rentals_fleet to tell Supabase exactly which relationship to use
     rent_res = supabase.table("rentals") \
-        .select("id, total, date_out, odo_out, fleet(plate, model), customers(name)") \
+        .select("id, total, date_out, odo_out, fleet!fk_rentals_fleet(plate, model), customers!fk_rentals_customers(name)") \
         .eq("status", "Active") \
         .execute()
 
@@ -103,23 +103,28 @@ try:
             with st.container(border=True):
                 r1, r2, r3 = st.columns([3, 3, 2])
                 
-                # Use .get() to avoid crashing if the join returned None
-                plate = r.get('fleet', {}).get('plate', 'N/A') if r.get('fleet') else "Unknown Vehicle"
-                cust_name = r.get('customers', {}).get('name', 'N/A') if r.get('customers') else "Unknown Customer"
+                # Extracting data safely using the explicit relationship key
+                fleet_info = r.get('fleet', {})
+                cust_info = r.get('customers', {})
+                
+                plate = fleet_info.get('plate', 'Unknown')
+                model = fleet_info.get('model', '')
+                cust_name = cust_info.get('name', 'Unknown')
                 
                 r1.write(f"🚗 **{plate}**")
+                r1.caption(f"{model}")
+                
                 r2.write(f"👤 {cust_name}")
+                
                 r3.write(f"💰 **${float(r['total']):,.2f}**")
-                st.caption(f"Out since: {r['date_out']} | Start Odo: {r['odo_out']} km")
+                
+                # Formatting the date for Fiji standard
+                d_out = datetime.fromisoformat(r['date_out']).strftime("%d %b, %I:%M %p")
+                st.caption(f"Departure: {d_out} | Odo Out: {r['odo_out']:,} km")
     else:
-        st.info("No vehicles are currently out on rental.")
+        st.info("No vehicles are currently out.")
 
 except Exception as e:
-    # --- THIS PART WILL TELL US THE REAL PROBLEM ---
-    st.error("⚠️ Database Error Detected")
-    st.code(str(e)) # This prints the actual error from Supabase
-    
-    st.info("Attempting fallback view (No Names)...")
-    # Fallback: Just show the IDs so the app doesn't feel broken
-    fallback = supabase.table("rentals").select("*").eq("status", "Active").execute()
-    st.write(fallback.data)
+    st.error("Relationship Ambiguity Error")
+    st.info("Try updating the join syntax in your code as shown above.")
+    st.expander("Show Technical Error").code(str(e))
