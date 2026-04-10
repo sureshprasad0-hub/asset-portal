@@ -10,12 +10,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. SIDEBAR TOP LABEL ---
-# Placing this here ensures it is the first element at the top of the side panel
-st.sidebar.markdown("# 🔑 Login Page")
-st.sidebar.write("---")
-
-# --- 3. CONNECTION ---
+# --- 2. CONNECTION ---
 @st.cache_resource
 def init_connection():
     try:
@@ -26,7 +21,7 @@ def init_connection():
 
 supabase = init_connection()
 
-# --- 4. CUSTOM CSS FOR RCA DESIGN ---
+# --- 3. CUSTOM CSS FOR RCA DESIGN ---
 st.markdown("""
     <style>
     .main {
@@ -45,18 +40,14 @@ st.markdown("""
         align-items: center;
         justify-content: center;
     }
-    /* Hide the default navigation entry for this specific file to avoid duplication */
-    [data-testid="stSidebarNav"] ul li:first-child {
-        display: none;
-    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 5. SESSION STATE ---
+# --- 4. SESSION STATE ---
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
-# --- 6. LOGIN INTERFACE ---
+# --- 5. LOGIN INTERFACE ---
 if not st.session_state['logged_in']:
     head_col1, head_col2 = st.columns([1, 3])
     
@@ -70,7 +61,7 @@ if not st.session_state['logged_in']:
     with head_col2:
         st.markdown("<h1 style='margin:0;'>RENTAL CAR APPLICATION (RCA)</h1>", unsafe_allow_html=True)
 
-    st.caption("<center>Secure Management Portal | Fiji Operations</center>", unsafe_allow_html=True)
+    st.caption("<center>Secure Rental Car Management Portal</center>", unsafe_allow_html=True)
     st.write("---")
 
     with st.container():
@@ -92,7 +83,7 @@ if not st.session_state['logged_in']:
                 else:
                     st.error("Invalid credentials. Please contact your system administrator.")
 
-# --- 7. LOGOUT INTERFACE ---
+# --- 6. LOGOUT INTERFACE ---
 else:
     st.subheader(f"Welcome back, {st.session_state.get('user_name', 'User')}")
     if st.button("Secure Logout"):
