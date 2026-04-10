@@ -10,9 +10,9 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. SIDEBAR LABEL OVERRIDE ---
-# This forces "Login Page" to appear at the top of the sidebar
-st.sidebar.markdown("# Login Page")
+# --- 2. SIDEBAR TOP LABEL ---
+# Placing this here ensures it is the first element at the top of the side panel
+st.sidebar.markdown("# 🔑 Login Page")
 st.sidebar.write("---")
 
 # --- 3. CONNECTION ---
@@ -39,13 +39,13 @@ st.markdown("""
         background-color: #ff4b4b;
         color: white;
     }
-    /* Vertical alignment for the header columns */
+    /* Vertical alignment for header columns */
     [data-testid="column"] {
         display: flex;
         align-items: center;
         justify-content: center;
     }
-    /* Hide the default 'app' or filename link in sidebar if necessary */
+    /* Hide the default navigation entry for this specific file to avoid duplication */
     [data-testid="stSidebarNav"] ul li:first-child {
         display: none;
     }
@@ -87,6 +87,7 @@ if not st.session_state['logged_in']:
                         "user_name": res.data[0]['full_name']
                     })
                     st.success("Login Successful!")
+                    # Redirection directly to 01 Dashboard
                     st.switch_page("pages/01_📊_Dashboard.py")
                 else:
                     st.error("Invalid credentials. Please contact your system administrator.")
