@@ -21,6 +21,7 @@ st.caption(f"📍 {company_display}")
 
 # --- 2. FETCH ACTIVE RENTALS ---
 try:
+    # Use explicit foreign key relationships
     active_res = supabase.table("rentals").select(
         "*, fleet!fk_rentals_fleet(plate, brand, model), customers!fk_rentals_customers(name)"
     ).eq("status", "Active").execute()
@@ -50,7 +51,8 @@ try:
                 st.write(f"**Date Out:** {r['date_out']}")
                 odo_out = r.get('odo_out', 0)
                 st.write(f"**Odometer Out:** {odo_out:,} km")
-                # New: Display Previously Billed Amount
+                
+                # Display Previously Billed Amount
                 prev_billed = float(r.get('total', 0))
                 st.metric("Previously Billed", f"${prev_billed:,.2f}")
                 
@@ -78,13 +80,14 @@ try:
                 days_rented = max(days_rented, 1) 
                 
                 final_total = days_rented * float(r['rate'])
-                # New: Calculate Extra Charges
+                
+                # Calculate Extra Charges
                 extra_charges = max(0.0, final_total - prev_billed)
                 
-                c_metrics = st.columns(3)
-                c_metrics[0].write(f"📊 **Duration:** {days_rented} Day(s)")
-                c_metrics[1].write(f"💰 **Final Total:** ${final_total:,.2f}")
-                c_metrics[2].write(f"⚠️ **Extra Due:** ${extra_charges:,.2f}")
+                m1, m2, m3 = st.columns(3)
+                m1.write(f"📊 **Duration:** {days_rented} Day(s)")
+                m2.write(f"💰 **Final Total:** ${final_total:,.2f}")
+                m3.write(f"⚠️ **Extra Due:** ${extra_charges:,.2f}")
 
                 if st.button("Complete Check-In", type="primary", use_container_width=True):
                     # 1. Update Rental Record
@@ -94,20 +97,21 @@ try:
                         "odo_in": odo_in,
                         "fuel_in": fuel_in,
                         "notes": notes,
-                        "total": final_total # Update with final total including extra charges
+                        "total": final_total 
                     }).eq("id", r['id']).execute()
 
                     # 2. Update Fleet Odometer and Status
+                    # This requires the 'current_odo' column added via SQL above
                     supabase.table("fleet").update({
                         "status": "Available",
                         "current_odo": odo_in
                     }).eq("id", r['vehicle_id']).execute()
 
-                    st.success(f"Check-in complete. Final amount: ${final_total:,.2f} (${extra_charges:,.2f} extra).")
+                    st.success(f"Check-in complete for {r['fleet']['plate']}. Odometer synced to {odo_in:,} km.")
                     st.balloons()
                     st.rerun()
-            except Exception as parse_err:
-                st.error(f"Calculation Error: {parse_err}")
+            except Exception as calc_err:
+                st.error(f"Calculation Error: {calc_err}")
     else:
         st.write("Please select an active rental to begin.")
 
