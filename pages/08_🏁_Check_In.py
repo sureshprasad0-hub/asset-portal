@@ -21,7 +21,6 @@ st.caption(f"📍 {company_display}")
 
 # --- 2. FETCH ACTIVE RENTALS ---
 try:
-    # Use explicit foreign key relationships
     active_res = supabase.table("rentals").select(
         "*, fleet!fk_rentals_fleet(plate, brand, model), customers!fk_rentals_customers(name)"
     ).eq("status", "Active").execute()
@@ -30,7 +29,6 @@ try:
         st.info("No active rentals currently out.")
         st.stop()
 
-    # Empty default selection
     rental_options = {
         f"{r['fleet']['plate']} - {r['customers']['name']}": r for r in active_res.data
     }
@@ -41,7 +39,6 @@ try:
     if selected_label != "":
         r = rental_options[selected_label]
 
-        # --- 3. CHECK-IN FORM ---
         with st.container(border=True):
             st.subheader(f"Return Details: {r['fleet']['plate']}")
             
@@ -52,36 +49,28 @@ try:
                 odo_out = r.get('odo_out', 0)
                 st.write(f"**Odometer Out:** {odo_out:,} km")
                 
-                # Display Previously Billed Amount
                 prev_billed = float(r.get('total', 0))
                 st.metric("Previously Billed", f"${prev_billed:,.2f}")
                 
             with col2:
-                # Combined Date and Time Field
                 return_ts_input = st.datetime_input("Return Date & Time", value=datetime.now())
                 odo_in = st.number_input("Odometer In", value=int(odo_out), min_value=int(odo_out))
                 
-                # Fuel intervals set to 1/8
                 fuel_options = ["Empty", "1/8", "1/4", "3/8", "1/2", "5/8", "3/4", "7/8", "Full"]
                 fuel_in = st.select_slider("Fuel Level In", options=fuel_options, value="Full")
 
             st.divider()
             notes = st.text_area("Return Condition / Damage Notes", placeholder="Note any new scratches or issues...")
 
-            # Calculation Logic
             try:
-                # Handle ISO timestamp from DB
                 out_ts_str = r['date_out'].replace('T', ' ')
                 out_ts = datetime.fromisoformat(out_ts_str)
                 
-                # Calculate Duration (Days)
                 duration = return_ts_input - out_ts
                 days_rented = duration.days + (1 if duration.seconds > 3600 else 0) 
                 days_rented = max(days_rented, 1) 
                 
                 final_total = days_rented * float(r['rate'])
-                
-                # Calculate Extra Charges
                 extra_charges = max(0.0, final_total - prev_billed)
                 
                 m1, m2, m3 = st.columns(3)
@@ -100,14 +89,14 @@ try:
                         "total": final_total 
                     }).eq("id", r['id']).execute()
 
-                    # 2. Update Fleet Odometer and Status
-                    # This requires the 'current_odo' column added via SQL above
+                    # 2. UPDATE FLEET TABLE ODOMETER
+                    # We update 'current_odo' so that the Fleet page is synchronized
                     supabase.table("fleet").update({
                         "status": "Available",
-                        "current_odo": odo_in
+                        "odometer": odo_in 
                     }).eq("id", r['vehicle_id']).execute()
 
-                    st.success(f"Check-in complete for {r['fleet']['plate']}. Odometer synced to {odo_in:,} km.")
+                    st.success(f"Check-in complete. Fleet odometer synced to {odo_in:,} km.")
                     st.balloons()
                     st.rerun()
             except Exception as calc_err:
