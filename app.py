@@ -3,8 +3,9 @@ from supabase import create_client, Client
 from PIL import Image
 
 # --- 1. PAGE CONFIGURATION ---
+# Updated: Labelled as 'Login Page'
 st.set_page_config(
-    page_title="RCA | Login",
+    page_title="Login Page",
     page_icon="🚗",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -22,6 +23,7 @@ def init_connection():
 supabase = init_connection()
 
 # --- 3. CUSTOM CSS FOR RCA DESIGN ---
+# Style matching checkout page with standard RCA branding
 st.markdown("""
     <style>
     .main {
@@ -81,12 +83,25 @@ if not st.session_state['logged_in']:
                         "user_name": res.data[0]['full_name']
                     })
                     st.success("Login Successful!")
-                    # Redirection Logic: Skips landing page and goes to Dashboard
+                    # Redirection Logic: Goes directly to 01 Dashboard
                     st.switch_page("pages/01_📊_Dashboard.py")
                 else:
                     st.error("Invalid credentials. Please contact your system administrator.")
 
-# --- 6. AUTHENTICATED REDIRECT ---
+# --- 6. LOGOUT INTERFACE ---
+# Displays only when already authenticated
 else:
-    # If the user is already logged in but visits app.py, send them directly to the Dashboard
-    st.switch_page("pages/01_📊_Dashboard.py")
+    st.subheader(f"Welcome back, {st.session_state.get('user_name', 'User')}")
+    st.info("You are currently logged in.")
+    
+    # Matching style with action buttons
+    if st.button("Secure Logout"):
+        st.session_state['logged_in'] = False
+        st.session_state.pop('user_role', None)
+        st.session_state.pop('user_name', None)
+        st.success("You have been logged out.")
+        st.rerun()
+        
+    st.divider()
+    if st.button("Return to Dashboard"):
+        st.switch_page("pages/01_📊_Dashboard.py")
