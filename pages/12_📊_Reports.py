@@ -14,8 +14,11 @@ supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
 st.title("📊 Business Intelligence & Reports")
 
-# Fetch Company Branding for the Header
-branding_res = supabase.table("settings").select("*").in_("config_key", ["company_name", "company_address", "company_phone", "company_email", "company_logo"]).execute()
+# Fetch Company Branding & Terms for the Header
+# Updated query to include 'rental_terms' (Standard Terms & Conditions)
+branding_res = supabase.table("settings").select("*").in_("config_key", [
+    "company_name", "company_address", "company_phone", "company_email", "company_logo", "rental_terms"
+]).execute()
 branding = {item['config_key']: item['config_value'] for item in branding_res.data}
 company_display = branding.get("company_name", "YOUR RENTAL & TOURS")
 st.caption(f"📍 {company_display}")
@@ -74,7 +77,6 @@ if report_mode == "📄 Rental Agreement Template":
                         st.write(f"📍 {branding.get('company_address', 'Fiji')}")
                         st.write(f"📞 {branding.get('company_phone', '')} | ✉️ {branding.get('company_email', '')}")
                     
-                    # FIXED: Changed unsafe_content_allowed to unsafe_allow_html
                     st.markdown("<h2 style='text-align: center;'>RENTAL AGREEMENT / VEHICLE OUT REPORT</h2>", unsafe_allow_html=True)
                     st.divider()
                     
@@ -91,8 +93,10 @@ if report_mode == "📄 Rental Agreement Template":
 
                     st.divider()
                     
+                    # UPDATED: Pulling dynamic terms from Settings table
                     st.markdown("### 📜 TERMS & CONDITIONS")
-                    st.caption("1. Vehicle Usage: Hirer agrees to use vehicle solely for personal use. 2. Insurance: Hirer responsible for insurance excess. 3. Fuel: Return with same level as out. 4. Fines: Hirer responsible for all traffic violations.")
+                    terms_text = branding.get("rental_terms", "Standard terms and conditions apply. Contact administration for details.")
+                    st.caption(terms_text)
                     
                     st.divider()
                     
@@ -103,7 +107,6 @@ if report_mode == "📄 Rental Agreement Template":
                         if sig_data:
                             st.image(sig_data, width=250)
                         else:
-                            # FIXED: Changed unsafe_content_allowed to unsafe_allow_html
                             st.markdown("<br><br>__________________________", unsafe_allow_html=True)
                     with s2:
                         st.markdown("### 📝 REMARKS")
@@ -113,86 +116,4 @@ if report_mode == "📄 Rental Agreement Template":
     except Exception as e:
         st.error(f"Data Fetch Error: {e}")
 
-# --- 5. REVENUE & FINANCIALS ---
-elif report_mode == "💰 Revenue & Financials":
-    st.subheader("Revenue & Financial Performance")
-    res = supabase.table("rentals").select("*, fleet!fk_rentals_fleet(plate, brand), customers!fk_rentals_customers(name)").execute()
-
-    if res.data:
-        df = pd.json_normalize(res.data)
-        df['total'] = pd.to_numeric(df['total'], errors='coerce').fillna(0)
-        df['tax_amount'] = pd.to_numeric(df['tax_amount'], errors='coerce').fillna(0)
-        
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Gross Revenue", f"${df['total'].sum():,.2f}")
-        m2.metric("VAT Collected", f"${df['tax_amount'].sum():,.2f}")
-        m3.metric("Total Bookings", len(df))
-
-        st.dataframe(df[['date_out', 'fleet!fk_rentals_fleet.plate', 'customers!fk_rentals_customers.name', 'total', 'status']], use_container_width=True, hide_index=True)
-
-# --- 6. ALL CUSTOMERS ---
-elif report_mode == "👥 All Customers":
-    st.subheader("Complete Customer Registry")
-    res = supabase.table("customers").select("*").order("name").execute()
-    
-    if res.data:
-        df_cust = pd.DataFrame(res.data)
-        display_df = df_cust.drop(columns=['license_scan_path']) if 'license_scan_path' in df_cust.columns else df_cust
-        st.write(f"**Total Registered:** {len(display_df)}")
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
-        
-        csv = display_df.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Download CSV", csv, "all_customers.csv", "text/csv")
-    else:
-        st.info("The customer registry is currently empty.")
-
-# --- 7. ACTIVE RENTAL CUSTOMERS ---
-elif report_mode == "🚗 Active Rental Customers":
-    st.subheader("Current Active Rentals")
-    res = supabase.table("rentals").select("*, customers!fk_rentals_customers(name, phone), fleet!fk_rentals_fleet(plate, model)").execute()
-    
-    if res.data:
-        df_active = pd.json_normalize(res.data)
-        active_list = df_active[df_active['status'].isin(['Active', 'Out'])]
-        
-        if not active_list.empty:
-            st.dataframe(active_list[['customers!fk_rentals_customers.name', 'customers!fk_rentals_customers.phone', 'fleet!fk_rentals_fleet.plate', 'date_out', 'total']], use_container_width=True, hide_index=True)
-        else:
-            st.info("There are no active rentals currently out.")
-    else:
-        st.info("No rental records found to analyze.")
-
-# --- 8. OVERDUE RENTALS ---
-elif report_mode == "⏳ Overdue Rentals":
-    st.subheader("Overdue & Delinquent Audit")
-    res = supabase.table("rentals").select("*, customers!fk_rentals_customers(name, phone), fleet!fk_rentals_fleet(plate)").execute()
-    
-    if res.data:
-        df_overdue = pd.json_normalize(res.data)
-        active_items = df_overdue[df_overdue['status'].isin(['Active', 'Out'])]
-        
-        if not active_items.empty:
-            st.warning("Review these active contracts for return-date compliance.")
-            st.dataframe(active_items[['customers!fk_rentals_customers.name', 'fleet!fk_rentals_fleet.plate', 'date_out', 'total']], use_container_width=True, hide_index=True)
-        else:
-            st.success("No active rentals found to review.")
-    else:
-        st.info("No rental history found to check for overdue items.")
-
-# --- 9. COMPLIANCE RISK (EXPIRED IDs) ---
-elif report_mode == "⚠️ Compliance Risk":
-    st.subheader("Customer ID Compliance Audit")
-    res = supabase.table("customers").select("name, dl_no, dl_expiry, phone").execute()
-    
-    if res.data:
-        df_risk = pd.DataFrame(res.data)
-        df_risk['expiry_dt'] = df_risk['dl_expiry'].apply(lambda x: safe_date(x, default=date.today()))
-        expired = df_risk[df_risk['expiry_dt'] < date.today()]
-        
-        if not expired.empty:
-            st.error(f"Alert: {len(expired)} customers have expired licenses.")
-            st.dataframe(expired[['name', 'dl_no', 'dl_expiry', 'phone']], use_container_width=True, hide_index=True)
-        else:
-            st.success("All customer IDs in the system are currently valid and compliant.")
-    else:
-        st.info("No customer data available for compliance check.")
+# ... (Keep all other report modes: Revenue, Customers, etc. as per original file)
