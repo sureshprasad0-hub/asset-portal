@@ -54,7 +54,6 @@ if not st.session_state['logged_in']:
     
     with head_col1:
         try:
-            # Use the specific filename from your upload
             logo = Image.open("image_718d46.png")
             st.image(logo, use_container_width=True)
         except:
@@ -82,19 +81,12 @@ if not st.session_state['logged_in']:
                         "user_name": res.data[0]['full_name']
                     })
                     st.success("Login Successful!")
-                    st.rerun()
+                    # Redirection Logic: Skips landing page and goes to Dashboard
+                    st.switch_page("pages/01_📊_Dashboard.py")
                 else:
                     st.error("Invalid credentials. Please contact your system administrator.")
 
-# --- 6. AUTHENTICATED LANDING ---
+# --- 6. AUTHENTICATED REDIRECT ---
 else:
-    # Fetch dynamic company name from settings
-    c_res = supabase.table("settings").select("config_value").eq("config_key", "company_name").execute()
-    company_name = c_res.data[0]['config_value'] if c_res.data else "YOUR RENTAL & TOURS"
-    
-    st.title(f"👋 Hello, {st.session_state['user_name']}!")
-    st.info(f"System Live: **{company_name}**. Please use the sidebar to navigate.")
-    
-    if st.button("Secure Logout"):
-        st.session_state['logged_in'] = False
-        st.rerun()
+    # If the user is already logged in but visits app.py, send them directly to the Dashboard
+    st.switch_page("pages/01_📊_Dashboard.py")
