@@ -15,7 +15,7 @@ def apply_global_borders():
             left: 0;
             width: 100%;
             height: 30px;
-            background-color: #ff4b4b; 
+            background-color: #e0e0e0; 
             z-index: 999999;
             display: flex;
             justify-content: space-between;
@@ -32,7 +32,7 @@ def apply_global_borders():
             position: fixed;
             right: 0;
             top: 0;
-            width: 4px;
+            width: 20px;
             height: 100vh;
             background-color: #e0e0e0;
             z-index: 999999;
@@ -44,7 +44,7 @@ def apply_global_borders():
             bottom: 0;
             left: 0;
             width: 100%;
-            height: 6px;
+            height: 20px;
             background-color: #e0e0e0;
             z-index: 999999;
         }}
