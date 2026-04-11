@@ -43,6 +43,55 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# --- CUSTOM CSS FOR 3-SIDE FRAMES ---
+st.markdown("""
+    <style>
+    /* 1. TOP FRAME (Thin bar below the header) */
+    .top-frame {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 4px;
+        background-color: #ff4b4b; /* Matches your RCA Red */
+        z-index: 999999;
+    }
+
+    /* 2. RIGHT FRAME */
+    .right-frame {
+        position: fixed;
+        right: 0;
+        top: 0;
+        width: 4px;
+        height: 100vh;
+        background-color: #e0e0e0; /* Subtle grey */
+        z-index: 999999;
+    }
+
+    /* 3. BOTTOM FRAME */
+    .bottom-frame {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 4px;
+        background-color: #e0e0e0;
+        z-index: 999999;
+    }
+
+    /* OPTIONAL: Adjust main content padding to ensure it doesn't hit the frames */
+    .block-container {
+        padding-top: 2rem;
+        padding-right: 2rem;
+        padding-left: 2rem;
+    }
+    </style>
+    
+    <div class="top-frame"></div>
+    <div class="right-frame"></div>
+    <div class="bottom-frame"></div>
+    """, unsafe_allow_html=True)
+
 # --- 4. SESSION STATE ---
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
