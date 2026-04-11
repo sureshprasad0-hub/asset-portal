@@ -8,6 +8,21 @@ st.set_page_config(page_title="RCA Fiji | Login", layout="centered", initial_sid
 # 2. Apply Borders immediately after config
 apply_global_borders()
 
+# --- CSS FIX FOR CLICKABILITY ---
+# This ensures the main content area is not blocked by the fixed frames
+st.markdown("""
+    <style>
+    .stApp {
+        z-index: 1;
+    }
+    /* Ensure the form container is above the background frames */
+    [data-testid="stForm"] {
+        position: relative;
+        z-index: 1000000; 
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 # --- LOGIN LOGIC ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
@@ -28,7 +43,6 @@ if not st.session_state.logged_in:
                 st.session_state.user_role = "Admin"
                 
                 # SUCCESSFUL REDIRECT
-                # Ensure the file path matches your dashboard file in the /pages/ folder
                 st.switch_page("pages/01_📊_Dashboard.py")
             else:
                 st.error("Invalid credentials")
