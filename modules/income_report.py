@@ -7,9 +7,9 @@ def show(supabase):
 
     try:
         # 1. FETCH DATA
-        # Fetching rentals with vehicle plate info
+        # We fetch all columns to identify the correct financial field dynamically
         res = supabase.table("rentals").select(
-            "id, date_out, total_amount, status, fleet!fk_rentals_fleet(plate)"
+            "*, fleet!fk_rentals_fleet(plate)"
         ).execute()
         
         if not res.data:
@@ -17,29 +17,37 @@ def show(supabase):
             return
 
         df = pd.DataFrame(res.data)
-        # Flatten the nested fleet plate data
-        df['vehicle'] = df['fleet'].apply(lambda x: x['plate'] if x else "N/A")
-        df['date_out'] = pd.to_datetime(df['date_out']).dt.date
+        
+        # --- 2. DYNAMIC COLUMN MAPPING ---
+        # Identify the income column (checking for total_amount, amount, or tax_amount)
+        possible_income_cols = ['total_amount', 'amount', 'tax_amount', 'grand_total']
+        income_col = next((col for col in possible_income_cols if col in df.columns), None)
 
-        # --- 2. FILTERS ---
+        if not income_col:
+            st.error(f"Could not find an income column. Available: {list(df.columns)}")
+            return
+
+        # Flatten nested vehicle data and format dates
+        df['vehicle'] = df['fleet'].apply(lambda x: x['plate'] if isinstance(x, dict) else "N/A")
+        df['date_out'] = pd.to_datetime(df['date_out']).dt.date
+        df['income_display'] = pd.to_numeric(df[income_col], errors='coerce').fillna(0)
+
+        # --- 3. FILTERS ---
         c1, c2 = st.columns(2)
         
         with c1:
-            # Vehicle Filter
             vehicle_list = ["All Vehicles"] + sorted(df['vehicle'].unique().tolist())
             selected_v = st.selectbox("Select Vehicle", vehicle_list)
         
         with c2:
-            # Date Filter Type
             date_mode = st.radio("Date Range", ["All Dates", "Custom Range"], horizontal=True)
-            
             start_dt, end_dt = None, None
             if date_mode == "Custom Range":
                 date_range = st.date_input("Select Range", [date.today(), date.today()])
                 if len(date_range) == 2:
                     start_dt, end_dt = date_range
 
-        # --- 3. APPLY LOGIC ---
+        # --- 4. APPLY LOGIC ---
         filtered_df = df.copy()
         
         if selected_v != "All Vehicles":
@@ -48,17 +56,18 @@ def show(supabase):
         if date_mode == "Custom Range" and start_dt and end_dt:
             filtered_df = filtered_df[(filtered_df['date_out'] >= start_dt) & (filtered_df['date_out'] <= end_dt)]
 
-        # --- 4. DISPLAY RESULTS ---
-        total_income = filtered_df['total_amount'].sum()
+        # --- 5. DISPLAY RESULTS ---
+        total_income = filtered_df['income_display'].sum()
         st.metric(label=f"Total Income ({selected_v})", value=f"${total_income:,.2f}")
         
+        # Display relevant columns only
+        display_cols = ['date_out', 'vehicle', income_col, 'status']
         st.dataframe(
-            filtered_df[['date_out', 'vehicle', 'total_amount', 'status']], 
+            filtered_df[display_cols], 
             use_container_width=True, 
             hide_index=True
         )
 
-        # Export option
         st.download_button(
             "📥 Download CSV", 
             filtered_df.to_csv(index=False), 
