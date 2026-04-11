@@ -18,7 +18,6 @@ def show(supabase):
         df = pd.DataFrame(res.data)
         
         # --- 2. DEFINE REVENUE TYPES ---
-        # Identify all potential revenue columns in your rentals table
         revenue_map = {
             'daily_rate': 'Rental Rate',
             'insurance_fee': 'Insurance',
@@ -28,16 +27,15 @@ def show(supabase):
             'extra_charges': 'Extras'
         }
         
-        # Find which of these exist in your actual database schema
+        # Identify existing revenue columns
         available_revenue_cols = [col for col in revenue_map.keys() if col in df.columns]
         
-        # Identify the primary total column
-        possible_totals = ['total_amount', 'amount', 'grand_total']
-        total_col = next((col for col in possible_totals if col in df.columns), None)
-
-        # Process and clean numeric data
-        for col in available_revenue_cols + ([total_col] if total_col else []):
+        # Process numeric data and create a reliable Total
+        for col in available_revenue_cols:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        
+        # CRITICAL FIX: Manually calculate the true total to avoid tax-only errors
+        df['calculated_total'] = df[available_revenue_cols].sum(axis=1)
 
         # Flatten vehicle data and format dates
         df['vehicle'] = df['fleet'].apply(lambda x: x['plate'] if isinstance(x, dict) else "N/A")
@@ -66,15 +64,15 @@ def show(supabase):
         # --- 5. REVENUE BREAKDOWN DISPLAY ---
         st.write("### 📈 Revenue Breakdown")
         
-        # Create columns for the total metric and the breakdown table
         m1, m2 = st.columns([1, 2])
         
         with m1:
-            overall_total = filtered_df[total_col].sum() if total_col else filtered_df[available_revenue_cols].sum().sum()
-            st.metric(label="Total Gross Revenue", value=f"${overall_total:,.2f}")
+            # Display the calculated total instead of the database column
+            overall_total = filtered_df['calculated_total'].sum()
+            st.metric(label=f"Total Gross Revenue ({selected_v})", value=f"${overall_total:,.2f}")
 
         with m2:
-            # Generate a summary of income by type
+            # Generate summary by type
             breakdown_data = []
             for col in available_revenue_cols:
                 breakdown_data.append({
@@ -87,8 +85,12 @@ def show(supabase):
 
         # --- 6. DETAILED DATA TABLE ---
         st.write("### Transaction Details")
-        display_cols = ['date_out', 'vehicle'] + available_revenue_cols + ([total_col] if total_col else [])
-        st.dataframe(filtered_df[display_cols], use_container_width=True, hide_index=True)
+        # Include the calculated total in the view
+        display_cols = ['date_out', 'vehicle'] + available_revenue_cols + ['calculated_total']
+        
+        # Rename 'calculated_total' for the user display
+        final_table = filtered_df[display_cols].rename(columns={'calculated_total': 'Total Income'})
+        st.dataframe(final_table, use_container_width=True, hide_index=True)
 
         st.download_button(
             "📥 Download Full Breakdown CSV", 
