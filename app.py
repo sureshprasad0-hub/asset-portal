@@ -1,6 +1,5 @@
 import streamlit as st
 from supabase import create_client
-# Ensure the utility is imported
 from ui_utils import apply_global_borders 
 
 # 1. Page Config must be FIRST
@@ -22,16 +21,19 @@ if not st.session_state.logged_in:
         submit = st.form_submit_button("Login")
         
         if submit:
-            # Add your authentication logic here
+            # Replace with your actual authentication logic
             if user_input == "admin" and pass_input == "fiji2026":
                 st.session_state.logged_in = True
                 st.session_state.user_name = user_input
-                st.rerun()
+                st.session_state.user_role = "Admin"
+                
+                # SUCCESSFUL REDIRECT
+                # Ensure the file path matches your dashboard file in the /pages/ folder
+                st.switch_page("pages/01_📊_Dashboard.py")
             else:
                 st.error("Invalid credentials")
     
-    # CRITICAL: Stop the script here so the rest of the app doesn't run
     st.stop()
 
-# If already logged in, show the rest of the application or redirect
-st.success(f"Welcome back, {st.session_state.user_name}!")
+# Fallback: If someone navigates to app.py while already logged in
+st.switch_page("pages/01_📊_Dashboard.py")
