@@ -14,7 +14,7 @@ def apply_global_borders():
             top: 0;
             left: 0;
             width: 100%;
-            height: 30px;
+            height: 20px;
             background-color: #e0e0e0; 
             z-index: 999999;
         }}
