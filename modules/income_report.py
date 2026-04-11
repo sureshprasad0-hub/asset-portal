@@ -7,7 +7,6 @@ def show(supabase):
 
     try:
         # 1. FETCH DATA
-        # We fetch all columns to identify the correct financial field dynamically
         res = supabase.table("rentals").select(
             "*, fleet!fk_rentals_fleet(plate)"
         ).execute()
@@ -18,27 +17,37 @@ def show(supabase):
 
         df = pd.DataFrame(res.data)
         
-        # --- 2. DYNAMIC COLUMN MAPPING ---
-        # Identify the income column (checking for total_amount, amount, or tax_amount)
-        possible_income_cols = ['total_amount', 'amount', 'tax_amount', 'grand_total']
-        income_col = next((col for col in possible_income_cols if col in df.columns), None)
+        # --- 2. DEFINE REVENUE TYPES ---
+        # Identify all potential revenue columns in your rentals table
+        revenue_map = {
+            'daily_rate': 'Rental Rate',
+            'insurance_fee': 'Insurance',
+            'delivery_fee': 'Delivery/Collection',
+            'bond_amount': 'Security Bond',
+            'tax_amount': 'Tax/VAT',
+            'extra_charges': 'Extras'
+        }
+        
+        # Find which of these exist in your actual database schema
+        available_revenue_cols = [col for col in revenue_map.keys() if col in df.columns]
+        
+        # Identify the primary total column
+        possible_totals = ['total_amount', 'amount', 'grand_total']
+        total_col = next((col for col in possible_totals if col in df.columns), None)
 
-        if not income_col:
-            st.error(f"Could not find an income column. Available: {list(df.columns)}")
-            return
+        # Process and clean numeric data
+        for col in available_revenue_cols + ([total_col] if total_col else []):
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-        # Flatten nested vehicle data and format dates
+        # Flatten vehicle data and format dates
         df['vehicle'] = df['fleet'].apply(lambda x: x['plate'] if isinstance(x, dict) else "N/A")
         df['date_out'] = pd.to_datetime(df['date_out']).dt.date
-        df['income_display'] = pd.to_numeric(df[income_col], errors='coerce').fillna(0)
 
         # --- 3. FILTERS ---
         c1, c2 = st.columns(2)
-        
         with c1:
             vehicle_list = ["All Vehicles"] + sorted(df['vehicle'].unique().tolist())
             selected_v = st.selectbox("Select Vehicle", vehicle_list)
-        
         with c2:
             date_mode = st.radio("Date Range", ["All Dates", "Custom Range"], horizontal=True)
             start_dt, end_dt = None, None
@@ -47,31 +56,44 @@ def show(supabase):
                 if len(date_range) == 2:
                     start_dt, end_dt = date_range
 
-        # --- 4. APPLY LOGIC ---
+        # --- 4. APPLY FILTER LOGIC ---
         filtered_df = df.copy()
-        
         if selected_v != "All Vehicles":
             filtered_df = filtered_df[filtered_df['vehicle'] == selected_v]
-            
         if date_mode == "Custom Range" and start_dt and end_dt:
             filtered_df = filtered_df[(filtered_df['date_out'] >= start_dt) & (filtered_df['date_out'] <= end_dt)]
 
-        # --- 5. DISPLAY RESULTS ---
-        total_income = filtered_df['income_display'].sum()
-        st.metric(label=f"Total Income ({selected_v})", value=f"${total_income:,.2f}")
+        # --- 5. REVENUE BREAKDOWN DISPLAY ---
+        st.write("### 📈 Revenue Breakdown")
         
-        # Display relevant columns only
-        display_cols = ['date_out', 'vehicle', income_col, 'status']
-        st.dataframe(
-            filtered_df[display_cols], 
-            use_container_width=True, 
-            hide_index=True
-        )
+        # Create columns for the total metric and the breakdown table
+        m1, m2 = st.columns([1, 2])
+        
+        with m1:
+            overall_total = filtered_df[total_col].sum() if total_col else filtered_df[available_revenue_cols].sum().sum()
+            st.metric(label="Total Gross Revenue", value=f"${overall_total:,.2f}")
+
+        with m2:
+            # Generate a summary of income by type
+            breakdown_data = []
+            for col in available_revenue_cols:
+                breakdown_data.append({
+                    "Revenue Type": revenue_map[col],
+                    "Total Amount": filtered_df[col].sum()
+                })
+            
+            breakdown_df = pd.DataFrame(breakdown_data)
+            st.table(breakdown_df.set_index("Revenue Type").style.format("${:,.2f}"))
+
+        # --- 6. DETAILED DATA TABLE ---
+        st.write("### Transaction Details")
+        display_cols = ['date_out', 'vehicle'] + available_revenue_cols + ([total_col] if total_col else [])
+        st.dataframe(filtered_df[display_cols], use_container_width=True, hide_index=True)
 
         st.download_button(
-            "📥 Download CSV", 
+            "📥 Download Full Breakdown CSV", 
             filtered_df.to_csv(index=False), 
-            "income_report.csv", 
+            "detailed_income_report.csv", 
             "text/csv", 
             use_container_width=True
         )
