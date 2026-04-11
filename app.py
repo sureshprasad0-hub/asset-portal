@@ -9,24 +9,26 @@ st.set_page_config(page_title="RCA Fiji | Login", layout="centered", initial_sid
 apply_global_borders()
 
 # --- CSS FIX FOR CLICKABILITY ---
-# This ensures the main content area is not blocked by the fixed frames
 st.markdown("""
     <style>
-    .stApp {
-        z-index: 1;
-    }
-    /* Ensure the form container is above the background frames */
-    [data-testid="stForm"] {
-        position: relative;
-        z-index: 1000000; 
-    }
+    .stApp { z-index: 1; }
+    [data-testid="stForm"] { position: relative; z-index: 1000000; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- LOGIN LOGIC ---
+# --- GLOBAL NAVIGATION LOGIC ---
+# Initialize login state
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 
+# Function to logout from anywhere
+def logout():
+    st.session_state.logged_in = False
+    st.session_state.user_name = None
+    st.session_state.user_role = None
+    st.switch_page("app.py")
+
+# --- LOGIN PAGE UI ---
 if not st.session_state.logged_in:
     st.title("🔐 Secure Login")
     
@@ -42,12 +44,12 @@ if not st.session_state.logged_in:
                 st.session_state.user_name = user_input
                 st.session_state.user_role = "Admin"
                 
-                # SUCCESSFUL REDIRECT
+                # SUCCESSFUL REDIRECT TO DASHBOARD
                 st.switch_page("pages/01_📊_Dashboard.py")
             else:
                 st.error("Invalid credentials")
     
     st.stop()
 
-# Fallback: If someone navigates to app.py while already logged in
+# Fallback: If logged in and on app.py, go to Dashboard
 st.switch_page("pages/01_📊_Dashboard.py")
