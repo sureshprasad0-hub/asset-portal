@@ -18,17 +18,7 @@ def apply_global_borders():
             background-color: #e0e0e0; 
             z-index: 999999;
         }}
-
-        /* RIGHT BORDER */
-        .right-frame {{
-            position: fixed;
-            right: 0;
-            top: 0;
-            width: 20px;
-            height: 100vh;
-            background-color: #e0e0e0;
-            z-index: 999999;
-        }}
+        
 
         /* BOTTOM BORDER - Now contains Metadata */
         .bottom-frame {{
