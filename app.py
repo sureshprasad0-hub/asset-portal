@@ -2,8 +2,8 @@ import streamlit as st
 from supabase import create_client, Client
 from PIL import Image
 
+# CUSTOM BORDER FOR ALL PAGES
 from ui_utils import apply_global_borders
-apply_global_borders()
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(
