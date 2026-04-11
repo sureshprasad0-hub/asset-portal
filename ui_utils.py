@@ -17,14 +17,6 @@ def apply_global_borders():
             height: 30px;
             background-color: #e0e0e0; 
             z-index: 999999;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0 15px;
-            color: white;
-            font-family: sans-serif;
-            font-size: 12px;
-            font-weight: bold;
         }}
 
         /* RIGHT BORDER */
@@ -38,29 +30,50 @@ def apply_global_borders():
             z-index: 999999;
         }}
 
-        /* BOTTOM BORDER */
+        /* BOTTOM BORDER - Now contains Metadata */
         .bottom-frame {{
             position: fixed;
             bottom: 0;
             left: 0;
             width: 100%;
-            height: 20px;
+            height: 30px;
             background-color: #e0e0e0;
             z-index: 999999;
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            color: black; /* Text color updated to black */
+            font-family: sans-serif;
+            font-size: 12px;
+            font-weight: bold;
+        }}
+
+        /* Layout helpers for bottom border alignment */
+        .bottom-left {{
+            flex: 1;
+            text-align: left;
+        }}
+        .bottom-center {{
+            flex: 1;
+            text-align: center;
+        }}
+        .bottom-right-spacer {{
+            flex: 1;
         }}
 
         /* Push application content inside the frames */
         .main .block-container {{
             padding-top: 50px !important;
             padding-right: 2rem;
-            padding-bottom: 2rem;
+            padding-bottom: 50px !important; /* Added bottom padding for visibility */
         }}
         </style>
         
-        <div class="top-frame">
-            <div>{now}</div>
-            <div>👤 {current_user}</div>
-        </div>
+        <div class="top-frame"></div>
         <div class="right-frame"></div>
-        <div class="bottom-frame"></div>
+        <div class="bottom-frame">
+            <div class="bottom-left">{now}</div>
+            <div class="bottom-center">👤 {current_user}</div>
+            <div class="bottom-right-spacer"></div>
+        </div>
         """, unsafe_allow_html=True)
